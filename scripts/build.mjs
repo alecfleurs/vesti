@@ -124,16 +124,18 @@ log(`pruned ${pruned}`);
 
 // ---------- 3. extract full text ----------
 let extractArticle = null;
+let EV = 0;
 try {
-  ({ extractArticle } = await import('./lib/extract.mjs'));
+  ({ extractArticle, EXTRACT_VERSION: EV } = await import('./lib/extract.mjs'));
 } catch (e) {
   log(`! extraction disabled (${e.code || e.message}); run npm install`);
 }
 if (extractArticle) {
   const due = Object.values(state.items)
-    .filter((it) => !it.x && itemTime(it) > now - config.extractHours * 3600e3)
+    // Missing bodies first, then bodies made by an older version of the cleaner.
+    .filter((it) => (!it.x || it.ev !== EV) && itemTime(it) > now - config.extractHours * 3600e3)
     .filter((it) => !it.fail || (it.fail < 3 && now - it.lastTry > 2 * 3600e3))
-    .sort((a, b) => itemTime(b) - itemTime(a))
+    .sort((a, b) => (a.x ? 1 : 0) - (b.x ? 1 : 0) || itemTime(b) - itemTime(a))
     .slice(0, config.maxExtractPerRun ?? 150);
   const bySource = new Map();
   for (const it of due) bySource.set(it.source, [...(bySource.get(it.source) || []), it]);
@@ -147,6 +149,7 @@ if (extractArticle) {
           const a = await extractArticle(it.url);
           await writeFile(path.join(ART, `${it.id}.json`), JSON.stringify(a));
           it.x = 1;
+          it.ev = EV;
           it.words = a.words;
           if (!it.lead && a.excerpt) it.lead = a.excerpt;
           if (!it.image && a.image) it.image = a.image;

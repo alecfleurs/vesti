@@ -3,7 +3,7 @@
   "retainHours": 72,
   "extractHours": 48,
   "maxItemsPerSource": 80,
-  "maxExtractPerRun": 150,
+  "maxExtractPerRun": 300,
   "sourceOrder": ["n1", "nova", "danas", "b92", "politika", "blic", "forbes-n1"],
   "exclude": [
     "/(zabava|showbiz|show-biz|horoskop|astro|rijaliti|zvezde|tracevi|lifestyle|superzena|kviz|igrice)(/|$)",

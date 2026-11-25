@@ -3,6 +3,9 @@
 import { JSDOM, VirtualConsole } from 'jsdom';
 import { Readability } from '@mozilla/readability';
 import { fetchText } from './feeds.mjs';
+import { preClean, postClean } from './clean.mjs';
+
+export const EXTRACT_VERSION = 2;
 
 const quiet = new VirtualConsole(); // swallow CSS/script parse noise from news pages
 
@@ -14,8 +17,6 @@ const DROP = new Set([
   'SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'FORM', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'SVG',
   'OBJECT', 'EMBED', 'VIDEO', 'AUDIO', 'CANVAS', 'ASIDE', 'NAV', 'FOOTER',
 ]);
-// Paragraphs that are site furniture, not article text.
-const JUNK = /^(pročitajte (još|i)|прочитајте|погледајте|pogledajte (još|i)|povezane vesti|izvor:? ?$|foto:|tagovi|podeli|share|preuzmite aplikaciju|pratite nas|zapratite)/i;
 
 function fixLazyImages(doc) {
   for (const img of doc.querySelectorAll('img')) {
@@ -68,17 +69,7 @@ function sanitize(html, base) {
   };
   walk(doc.body);
 
-  for (const p of doc.body.querySelectorAll('p, li, h2, h3, h4, figure')) {
-    const text = p.textContent.trim();
-    if (!text && !p.querySelector('img')) p.remove();
-    else if (text.length < 120 && JUNK.test(text)) p.remove();
-  }
-  // Collapse duplicate images (lead image often repeats).
-  const seen = new Set();
-  for (const img of doc.body.querySelectorAll('img')) {
-    if (seen.has(img.src)) img.remove();
-    else seen.add(img.src);
-  }
+  postClean(doc.body, doc);
   return doc.body.innerHTML.replace(/\n{2,}/g, '\n').trim();
 }
 
@@ -91,6 +82,7 @@ export async function extractArticle(url) {
   const ogImage = meta('meta[property="og:image"]') || meta('meta[name="twitter:image"]');
   const published = Date.parse(meta('meta[property="article:published_time"]') || meta('meta[itemprop="datePublished"]'));
   fixLazyImages(doc);
+  preClean(doc);
 
   const art = new Readability(doc, { charThreshold: 300, keepClasses: false }).parse();
   if (!art || !art.content) throw new Error('readability: no content');

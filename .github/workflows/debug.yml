@@ -1,0 +1,25 @@
+name: debug-extract
+
+on:
+  workflow_dispatch:
+    inputs:
+      per_source:
+        description: Articles per source
+        default: '2'
+      source:
+        description: Only this source id (optional)
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund --omit=dev
+      - run: node scripts/debug-extract.mjs "${{ inputs.per_source }}" "${{ inputs.source }}"
