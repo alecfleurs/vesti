@@ -1,0 +1,7 @@
+{
+  "name": "N1",
+  "home": "https://n1info.rs/",
+  "feeds": ["https://n1info.rs/feed/"],
+  "exclude": ["n1info\\.rs/english/"],
+  "color": "#d32f2f"
+}

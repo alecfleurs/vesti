@@ -1,0 +1,6 @@
+{
+  "name": "Blic",
+  "home": "https://www.blic.rs/",
+  "feeds": ["https://www.blic.rs/rss/danasnje-vesti"],
+  "color": "#e53935"
+}

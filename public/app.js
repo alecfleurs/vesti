@@ -1,0 +1,545 @@
+'use strict';
+
+/* ---------- storage ---------- */
+const store = {
+  get(k, d) {
+    try {
+      const v = localStorage.getItem('vesti:' + k);
+      return v == null ? d : JSON.parse(v);
+    } catch {
+      return d;
+    }
+  },
+  set(k, v) {
+    try {
+      localStorage.setItem('vesti:' + k, JSON.stringify(v));
+    } catch {}
+  },
+  del(k) {
+    try {
+      localStorage.removeItem('vesti:' + k);
+    } catch {}
+  },
+};
+
+const S = {
+  meta: null,
+  index: null,
+  key: null,
+  tab: store.get('tab', 'top'),
+  hidden: new Set(store.get('hidden', [])),
+  read: store.get('read', {}),
+  prefs: Object.assign({ theme: 'auto', size: 18, latin: false }, store.get('prefs', {})),
+  limit: 60,
+  listScroll: 0,
+  loading: false,
+  lastLoad: 0,
+};
+
+const app = document.getElementById('app');
+const $ = (s, r = document) => r.querySelector(s);
+
+/* ---------- text ---------- */
+const esc = (s) =>
+  String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+const CYR = {
+  'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'ђ': 'đ', 'е': 'e', 'ж': 'ž', 'з': 'z', 'и': 'i', 'ј': 'j', 'к': 'k',
+  'л': 'l', 'љ': 'lj', 'м': 'm', 'н': 'n', 'њ': 'nj', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'ћ': 'ć', 'у': 'u',
+  'ф': 'f', 'х': 'h', 'ц': 'c', 'ч': 'č', 'џ': 'dž', 'ш': 'š', 'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Ђ': 'Đ',
+  'Е': 'E', 'Ж': 'Ž', 'З': 'Z', 'И': 'I', 'Ј': 'J', 'К': 'K', 'Л': 'L', 'Љ': 'Lj', 'М': 'M', 'Н': 'N', 'Њ': 'Nj', 'О': 'O',
+  'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'Ћ': 'Ć', 'У': 'U', 'Ф': 'F', 'Х': 'H', 'Ц': 'C', 'Ч': 'Č', 'Џ': 'Dž', 'Ш': 'Š',
+};
+const lat = (s) => (S.prefs.latin && s ? String(s).replace(/[Ѐ-ӿ]/g, (c) => CYR[c] ?? c) : s);
+function latinizeNode(root) {
+  if (!S.prefs.latin) return;
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let n;
+  while ((n = w.nextNode())) if (/[Ѐ-ӿ]/.test(n.nodeValue)) n.nodeValue = lat(n.nodeValue);
+}
+
+function ago(t) {
+  const d = Date.now() - t;
+  if (d < 60e3) return 'upravo';
+  if (d < 3600e3) return `pre ${Math.floor(d / 60e3)} min`;
+  const date = new Date(t);
+  const hm = date.toLocaleTimeString('sr-Latn-RS', { hour: '2-digit', minute: '2-digit' });
+  const today = new Date();
+  if (date.toDateString() === today.toDateString()) return d < 6 * 3600e3 ? `pre ${Math.floor(d / 3600e3)} h` : `danas ${hm}`;
+  const y = new Date(today);
+  y.setDate(today.getDate() - 1);
+  if (date.toDateString() === y.toDateString()) return `juče ${hm}`;
+  return `${date.getDate()}.${date.getMonth() + 1}. ${hm}`;
+}
+
+/* ---------- icons ---------- */
+const I = {
+  back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
+  refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>',
+  gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+  ext: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>',
+  minus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><text x="4" y="17" font-size="13" font-family="serif" fill="currentColor" stroke="none">A</text><path d="M15 12h6"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><text x="2" y="18" font-size="17" font-family="serif" fill="currentColor" stroke="none">A</text><path d="M15 12h6M18 9v6"/></svg>',
+};
+
+/* ---------- prefs ---------- */
+function applyPrefs() {
+  const dark = S.prefs.theme === 'dark' || (S.prefs.theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  document.documentElement.style.setProperty('--size', S.prefs.size + 'px');
+  const tc = $('meta[name="theme-color"]');
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.removeAttribute('media'));
+  if (tc) tc.content = dark ? '#151515' : '#f7f5f0';
+}
+function savePrefs() {
+  store.set('prefs', S.prefs);
+  applyPrefs();
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyPrefs);
+
+function toast(msg) {
+  document.querySelector('.toast')?.remove();
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2600);
+}
+
+/* ---------- crypto ---------- */
+const b64 = {
+  dec: (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0)),
+  enc: (u8) => btoa(String.fromCharCode(...new Uint8Array(u8))),
+};
+
+async function keyFor(meta, pass) {
+  const cached = store.get('key');
+  if (!pass && cached && cached.salt === meta.salt && cached.iter === meta.iter) {
+    return crypto.subtle.importKey('raw', b64.dec(cached.k), 'AES-GCM', false, ['decrypt']);
+  }
+  pass = pass || store.get('pass');
+  if (!pass) return null;
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveKey']);
+  const key = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', hash: 'SHA-256', salt: b64.dec(meta.salt), iterations: meta.iter },
+    base,
+    { name: 'AES-GCM', length: 256 },
+    true,
+    ['decrypt'],
+  );
+  store.set('key', { salt: meta.salt, iter: meta.iter, k: b64.enc(await crypto.subtle.exportKey('raw', key)) });
+  store.set('pass', pass);
+  return key;
+}
+
+async function decrypt(buf) {
+  const u8 = new Uint8Array(buf);
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: u8.slice(0, 12) }, S.key, u8.slice(12));
+  const stream = new Blob([plain]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return JSON.parse(await new Response(stream).text());
+}
+
+async function getBin(url, opts) {
+  const r = await fetch(url, opts);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.arrayBuffer();
+}
+
+/* ---------- data ---------- */
+async function load(pass) {
+  if (S.loading) return;
+  S.loading = true;
+  document.querySelector('[data-act="refresh"]')?.classList.add('spin');
+  try {
+    const meta = await (await fetch('data/meta.json', { cache: 'no-cache' })).json();
+    S.meta = meta;
+    S.key = await keyFor(meta, pass);
+    if (!S.key) return renderUnlock();
+    let index;
+    try {
+      index = await decrypt(await getBin('data/index.bin', { cache: 'no-cache' }));
+    } catch (e) {
+      if (e.name === 'OperationError') {
+        store.del('key');
+        store.del('pass');
+        S.key = null;
+        return renderUnlock(pass ? 'Pogrešna lozinka.' : 'Lozinka je promenjena. Unesi novu.');
+      }
+      throw e;
+    }
+    S.index = index;
+    S.lastLoad = Date.now();
+    document.title = index.title || 'Vesti';
+    pruneRead();
+    route();
+    prefetch();
+    navigator.serviceWorker?.controller?.postMessage({ type: 'keep', ids: Object.keys(index.items) });
+  } catch (e) {
+    console.error(e);
+    if (S.index) toast('Nema veze. Prikazujem sačuvane vesti.');
+    else app.innerHTML = `<div class="wrap"><p class="empty">Vesti trenutno nisu dostupne.<br><small>${esc(e.message)}</small></p>
+      <button class="more" onclick="location.reload()">Pokušaj ponovo</button></div>`;
+  } finally {
+    S.loading = false;
+    document.querySelector('[data-act="refresh"]')?.classList.remove('spin');
+  }
+}
+
+function pruneRead() {
+  const live = new Set(S.index.clusters.map((c) => c.id));
+  for (const id of Object.keys(S.read)) if (!live.has(id)) delete S.read[id];
+  store.set('read', S.read);
+}
+
+const srcById = (id) => S.index.sources.find((s) => s.id === id) || { id, name: id };
+const visible = (itemId) => !S.hidden.has(S.index.items[itemId]?.s);
+
+function viewClusters() {
+  const out = [];
+  for (const c of S.index.clusters) {
+    const items = c.it.filter(visible);
+    if (!items.length) continue;
+    const rep = items.includes(c.r) ? c.r : items[0];
+    const srcs = [...new Set(items.map((id) => S.index.items[id].s))];
+    out.push({ ...c, items, rep, srcs });
+  }
+  return out;
+}
+
+function ranked() {
+  const list = viewClusters();
+  if (S.tab === 'new') return list.sort((a, b) => b.l - a.l);
+  const now = Date.now();
+  return list
+    .filter((c) => now - c.l < 30 * 3600e3)
+    .map((c) => {
+      const age = (now - c.l) / 3600e3;
+      const score = (c.srcs.length + 0.25 * (c.items.length - c.srcs.length)) * Math.exp(-age / 14);
+      return { c, score };
+    })
+    .sort((a, b) => b.score - a.score)
+    .map((x) => x.c);
+}
+
+const isUnread = (c) => !S.read[c.id] || c.l > S.read[c.id] + 1000;
+
+/* ---------- views ---------- */
+function bar(left, right = '') {
+  return `<header class="bar"><div class="bar-in">${left}${right}</div></header>`;
+}
+
+function renderList() {
+  const idx = S.index;
+  const list = ranked();
+  const shown = list.slice(0, S.limit);
+  const unread = list.filter(isUnread).length;
+  const cards = shown
+    .map((c) => {
+      const it = idx.items[c.rep];
+      const src = srcById(it.s);
+      const others = c.srcs.length - 1;
+      const un = isUnread(c);
+      const fresh = S.read[c.id] && un;
+      return `<li class="card${un ? '' : ' read'}"><a href="#/a/${c.rep}/${c.id}">
+        <div class="meta">${fresh ? '<span class="dot-new" title="Novi izvori"></span>' : ''}
+          <span class="src" style="--c:${esc(src.color)}">${esc(src.name)}</span>
+          ${others > 0 ? `<span class="multi">+${others} ${others === 1 ? 'izvor' : 'izvora'}</span>` : ''}
+          <span>${ago(c.l)}</span></div>
+        <h2>${esc(lat(it.t))}</h2>
+        ${it.l ? `<p class="lead">${esc(lat(it.l))}</p>` : ''}
+      </a></li>`;
+    })
+    .join('');
+
+  app.innerHTML =
+    bar(
+      `<div class="title-col"><h1>${esc(idx.title || 'Vesti')}</h1><span class="sub">ažurirano ${ago(idx.generated)} · ${unread} nepročitanih</span></div>`,
+      `<button class="icon-btn" data-act="refresh" aria-label="Osveži">${I.refresh}</button>
+       <a class="icon-btn" href="#/settings" aria-label="Podešavanja">${I.gear}</a>`,
+    ) +
+    `<main class="wrap">
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" data-tab="top" aria-selected="${S.tab === 'top'}">Najvažnije</button>
+        <button class="tab" role="tab" data-tab="new" aria-selected="${S.tab === 'new'}">Najnovije</button>
+        <span class="spacer"></span>
+        <button class="link-btn" data-act="allread">Sve pročitano</button>
+      </div>
+      ${shown.length ? `<ul class="list">${cards}</ul>` : '<p class="empty">Nema vesti za prikaz.</p>'}
+      ${list.length > S.limit ? `<button class="more" data-act="more">Prikaži još (${list.length - S.limit})</button>` : ''}
+      <p class="foot">${list.length} vesti iz ${Object.keys(idx.items).length} članaka · ${idx.sources.length} izvora</p>
+    </main>`;
+  requestAnimationFrame(() => window.scrollTo(0, S.listScroll));
+}
+
+async function renderArticle(itemId, clusterId) {
+  const idx = S.index;
+  const it = idx.items[itemId];
+  if (!it) return (location.hash = '#/');
+  const src = srcById(it.s);
+  const cluster = idx.clusters.find((c) => c.id === clusterId) || idx.clusters.find((c) => c.it.includes(itemId));
+  if (cluster) {
+    S.read[cluster.id] = Math.max(Date.now(), cluster.l);
+    store.set('read', S.read);
+  }
+  const others = (cluster?.it || []).filter((id) => id !== itemId && visible(id));
+
+  app.innerHTML =
+    bar(
+      `<a class="icon-btn" href="#/" data-act="back" aria-label="Nazad">${I.back}</a>
+       <span class="crumb">${esc(src.name)}</span>`,
+      `<button class="icon-btn" data-act="smaller" aria-label="Manji tekst">${I.minus}</button>
+       <button class="icon-btn" data-act="bigger" aria-label="Veći tekst">${I.plus}</button>
+       <a class="txt-btn" href="${esc(it.u)}" target="_blank" rel="noopener noreferrer">Original ${I.ext}</a>`,
+    ) +
+    `<main class="wrap"><article class="reader">
+      <div class="kicker"><span class="src" style="--c:${esc(src.color)}">${esc(src.name)}</span><span>${ago(it.p)}</span>
+        ${it.w ? `<span>${Math.max(1, Math.round(it.w / 220))} min čitanja</span>` : ''}<span class="byline"></span></div>
+      <h1>${esc(lat(it.t))}</h1>
+      <div class="content">${it.x ? '<p class="notice">Učitavam…</p>' : ''}</div>
+      ${others.length ? `<section class="also"><h3>Ista vest, drugi izvori</h3>${others
+        .map((id) => {
+          const o = idx.items[id];
+          const os = srcById(o.s);
+          return `<a href="#/a/${id}/${cluster.id}"><div class="meta"><span class="src" style="--c:${esc(os.color)}">${esc(os.name)}</span><span>${ago(o.p)}</span></div><div class="t">${esc(lat(o.t))}</div></a>`;
+        })
+        .join('')}</section>` : ''}
+    </article></main>`;
+  window.scrollTo(0, 0);
+
+  const box = $('.content');
+  const fallback = (why) => {
+    box.innerHTML = `${it.i ? `<img class="hero" src="${esc(it.i)}" alt="" referrerpolicy="no-referrer" loading="lazy" onerror="this.remove()">` : ''}
+      ${it.l ? `<p class="body">${esc(lat(it.l))}</p>` : ''}
+      <p class="notice">${why}</p>
+      <a class="cta" href="${esc(it.u)}" target="_blank" rel="noopener noreferrer">Otvori na sajtu ${I.ext}</a>`;
+  };
+  if (!it.x) return fallback('Pun tekst ovog članka nije dostupan (plaćeni sadržaj, video ili sajt blokira preuzimanje).');
+  try {
+    const a = await decrypt(await getBin(`data/a/${itemId}.bin`));
+    if (location.hash.split('/')[2] !== itemId) return; // user navigated away
+    const body = document.createElement('div');
+    body.className = 'body';
+    body.innerHTML = a.html;
+    for (const img of body.querySelectorAll('img')) {
+      img.loading = 'lazy';
+      img.referrerPolicy = 'no-referrer';
+      img.onerror = () => img.remove();
+    }
+    for (const l of body.querySelectorAll('a')) {
+      l.target = '_blank';
+      l.rel = 'noopener noreferrer';
+    }
+    latinizeNode(body);
+    const hero = it.i || a.image;
+    const heroDup = hero && [...body.querySelectorAll('img')].some((im) => sameImage(im.src, hero));
+    box.innerHTML = hero && !heroDup ? `<img class="hero" src="${esc(hero)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">` : '';
+    box.appendChild(body);
+    box.insertAdjacentHTML('beforeend', `<a class="cta" href="${esc(it.u)}" target="_blank" rel="noopener noreferrer">Otvori original na ${esc(src.name)} ${I.ext}</a>`);
+    if (a.byline) $('.byline').textContent = lat(a.byline);
+  } catch (e) {
+    fallback(navigator.onLine ? 'Članak nije moguće učitati.' : 'Niste na mreži, a ovaj članak nije sačuvan.');
+  }
+}
+const sameImage = (a, b) => {
+  const k = (u) => u.split('?')[0].replace(/-\d+x\d+(?=\.\w+$)/, '').split('/').pop();
+  return k(a) === k(b);
+};
+
+function renderSettings() {
+  const idx = S.index;
+  const repo = idx.repo;
+  const statusOf = (s) => {
+    if (s.mode === 'failed') return ['bad', `Ne radi: ${s.error || 'nepoznata greška'}`];
+    if (s.mode === 'rss') return ['ok', `RSS · ${s.count} članaka`];
+    if (s.mode === 'scrape') return ['warn', `Bez RSS-a, naslovi sa naslovne strane · ${s.count}`];
+    return ['warn', `RSS pronađen automatski · ${s.count} članaka`];
+  };
+  const seg = (name, val, opts) =>
+    `<div class="seg">${opts.map(([v, l]) => `<button data-pref="${name}" data-val="${v}" aria-pressed="${val === v}">${l}</button>`).join('')}</div>`;
+
+  app.innerHTML =
+    bar(`<a class="icon-btn" href="#/" aria-label="Nazad">${I.back}</a><span class="crumb">Podešavanja</span>`) +
+    `<main class="wrap">
+      <section class="panel"><h2>Izgled</h2>
+        <div class="row"><div class="grow">Tema</div>${seg('theme', S.prefs.theme, [['auto', 'Auto'], ['light', 'Svetla'], ['dark', 'Tamna']])}</div>
+        <div class="row"><div class="grow">Veličina teksta<div class="hint">${S.prefs.size}px</div></div>
+          <input type="range" min="15" max="24" step="1" value="${S.prefs.size}" data-act="size"></div>
+        <div class="row"><div class="grow">Sve latinicom<div class="hint">Ćirilične naslove i tekstove prikazuje latinicom</div></div>
+          <input type="checkbox" class="switch" data-act="latin" ${S.prefs.latin ? 'checked' : ''}></div>
+      </section>
+
+      <section class="panel"><h2>Izvori</h2>
+        ${idx.sources.map((s) => {
+          const [cls, txt] = statusOf(s);
+          return `<div class="row"><span class="status ${cls}"></span>
+            <div class="grow"><strong>${esc(s.name)}</strong><div class="hint">${esc(txt)}</div></div>
+            <input type="checkbox" class="switch" data-src="${esc(s.id)}" aria-label="Prikaži ${esc(s.name)}" ${S.hidden.has(s.id) ? '' : 'checked'}></div>`;
+        }).join('')}
+        <div class="row"><div class="grow hint">Isključeni izvori se skrivaju samo na ovom uređaju.</div></div>
+      </section>
+
+      <section class="panel"><h2>Dodaj izvor</h2>
+        <label class="field"><span>Naziv</span><input id="ns-name" placeholder="npr. RTS" autocomplete="off"></label>
+        <label class="field"><span>Adresa sajta</span><input id="ns-home" type="url" inputmode="url" placeholder="https://www.rts.rs/" autocomplete="off"></label>
+        <label class="field"><span>RSS adresa (nije obavezno)</span><input id="ns-feed" type="url" inputmode="url" placeholder="Pronalazi se automatski" autocomplete="off"></label>
+        <a class="primary" id="ns-go" target="_blank" rel="noopener" aria-disabled="true" href="#">Dodaj preko GitHuba</a>
+        <p class="hint" style="margin:0 0 14px">${repo
+          ? 'Otvara GitHub sa pripremljenim fajlom. Potvrdi sa <b>Commit changes</b>. Izvor se pojavljuje posle sledećeg ažuriranja.'
+          : 'Dostupno kada aplikacija radi sa GitHub Pages.'}</p>
+      </section>
+
+      <section class="panel"><h2>Održavanje</h2>
+        ${repo ? `<a class="row" href="https://github.com/${esc(repo)}/tree/main/sources" target="_blank" rel="noopener"><div class="grow">Uredi ili ukloni izvore<div class="hint">Fajlovi u folderu sources na GitHubu</div></div>${I.ext}</a>
+        <a class="row" href="https://github.com/${esc(repo)}/actions/workflows/update.yml" target="_blank" rel="noopener"><div class="grow">Ažuriraj odmah<div class="hint">Run workflow na GitHub Actions</div></div>${I.ext}</a>` : ''}
+        <button class="row" style="width:100%;border-left:0;border-right:0;border-bottom:0;background:none;text-align:left;cursor:pointer" data-act="logout"><div class="grow">Zaboravi lozinku na ovom uređaju</div></button>
+      </section>
+      <p class="foot">Poslednje ažuriranje: ${new Date(idx.generated).toLocaleString('sr-Latn-RS')}</p>
+    </main>`;
+
+  const name = $('#ns-name'), home = $('#ns-home'), feed = $('#ns-feed'), go = $('#ns-go');
+  const update = () => {
+    let ok = false;
+    try {
+      ok = !!repo && name.value.trim() && /^https?:$/.test(new URL(home.value.trim()).protocol);
+    } catch {}
+    go.setAttribute('aria-disabled', String(!ok));
+    if (!ok) return;
+    const slug = name.value.trim().toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'dj')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'izvor';
+    const json = { name: name.value.trim(), home: home.value.trim(), feeds: feed.value.trim() ? [feed.value.trim()] : [] };
+    go.href = `https://github.com/${repo}/new/main/sources?filename=${encodeURIComponent(slug + '.json')}&value=${encodeURIComponent(JSON.stringify(json, null, 2) + '\n')}`;
+  };
+  [name, home, feed].forEach((el) => el.addEventListener('input', update));
+}
+
+function renderUnlock(err = '') {
+  app.innerHTML = `<main class="unlock"><form class="box" id="unlock">
+    <h1>Vesti</h1><p>Unesi lozinku (NEWS_KEY) da otključaš vesti na ovom uređaju.</p>
+    <label class="field"><span>Lozinka</span><input id="pass" type="password" autocomplete="current-password" required></label>
+    <div class="err">${esc(err)}</div>
+    <button class="primary" type="submit">Otključaj</button></form></main>`;
+  $('#unlock').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = $('#unlock button');
+    btn.textContent = 'Otključavam…';
+    btn.disabled = true;
+    await load($('#pass').value);
+  });
+  $('#pass').focus();
+}
+
+/* ---------- routing ---------- */
+let current = '';
+function route() {
+  if (!S.index) return;
+  const h = location.hash || '#/';
+  if (current && h !== current) S.navs = h === '#/' ? 0 : (S.navs || 0) + 1;
+  if (current === '#/' && h !== '#/') S.listScroll = window.scrollY;
+  current = h;
+  const parts = h.slice(2).split('/');
+  if (parts[0] === 'a' && parts[1]) return renderArticle(parts[1], parts[2]);
+  if (parts[0] === 'settings') return renderSettings();
+  renderList();
+}
+window.addEventListener('hashchange', route);
+
+/* ---------- events ---------- */
+app.addEventListener('click', (e) => {
+  const t = e.target.closest('[data-act],[data-tab],[data-pref]');
+  if (!t) return;
+  if (t.dataset.tab) {
+    S.tab = t.dataset.tab;
+    store.set('tab', S.tab);
+    S.limit = 60;
+    S.listScroll = 0;
+    return renderList();
+  }
+  if (t.dataset.pref) {
+    S.prefs[t.dataset.pref] = t.dataset.val;
+    savePrefs();
+    return renderSettings();
+  }
+  switch (t.dataset.act) {
+    case 'refresh':
+      return load();
+    case 'more':
+      S.limit += 60;
+      S.listScroll = window.scrollY;
+      return renderList();
+    case 'allread':
+      for (const c of S.index.clusters) S.read[c.id] = c.l;
+      store.set('read', S.read);
+      S.listScroll = window.scrollY;
+      renderList();
+      return toast('Sve označeno kao pročitano');
+    case 'back':
+      if (S.navs === 1) {
+        e.preventDefault();
+        history.back();
+      }
+      return;
+    case 'smaller':
+    case 'bigger':
+      S.prefs.size = Math.min(24, Math.max(15, S.prefs.size + (t.dataset.act === 'bigger' ? 1 : -1)));
+      return savePrefs();
+    case 'logout':
+      store.del('key');
+      store.del('pass');
+      S.key = null;
+      S.index = null;
+      return renderUnlock();
+  }
+});
+app.addEventListener('input', (e) => {
+  const t = e.target;
+  if (t.dataset.act === 'size') {
+    S.prefs.size = +t.value;
+    savePrefs();
+    t.closest('.row').querySelector('.hint').textContent = S.prefs.size + 'px';
+  }
+});
+app.addEventListener('change', (e) => {
+  const t = e.target;
+  if (t.dataset.act === 'latin') {
+    S.prefs.latin = t.checked;
+    savePrefs();
+  } else if (t.dataset.src) {
+    if (t.checked) S.hidden.delete(t.dataset.src);
+    else S.hidden.add(t.dataset.src);
+    store.set('hidden', [...S.hidden]);
+  }
+});
+
+// Refresh when coming back to the app after a while.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && S.key && Date.now() - S.lastLoad > 10 * 60e3) load();
+});
+
+/* ---------- offline prefetch ---------- */
+async function prefetch() {
+  if (!navigator.onLine || navigator.connection?.saveData) return;
+  const ids = ranked()
+    .slice(0, 40)
+    .map((c) => c.rep)
+    .filter((id) => S.index.items[id].x);
+  let i = 0;
+  const worker = async () => {
+    while (i < ids.length) {
+      const id = ids[i++];
+      try {
+        await fetch(`data/a/${id}.bin`);
+      } catch {}
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+}
+
+/* ---------- boot ---------- */
+applyPrefs();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if (!('DecompressionStream' in window) || !crypto.subtle) {
+  app.innerHTML = '<p class="empty">Ovaj pregledač je prestar za aplikaciju.</p>';
+} else {
+  app.innerHTML = '<p class="empty">Učitavam…</p>';
+  load();
+}

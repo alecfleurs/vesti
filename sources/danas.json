@@ -1,0 +1,6 @@
+{
+  "name": "Danas",
+  "home": "https://www.danas.rs/",
+  "feeds": ["https://www.danas.rs/feed/"],
+  "color": "#c62828"
+}

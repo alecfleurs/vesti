@@ -1,0 +1,133 @@
+// Calibration test on real headlines from 24-25 Nov 2026 (titles + URLs only, no leads: the harder case).
+import { clusterItems } from './lib/cluster.mjs';
+
+const raw = `
+danas|2026-11-25T19:47:51Z|Deklaracija samita u Briselu: Proširenje EU je realna mogućnost, od Zapadnog Balkana se očekuju brže reforme|https://www.danas.rs/vesti/politika/deklaracija-samita-u-briselu-eu-balkan/
+danas|2026-11-25T19:33:01Z|Pavlu Bihaliju određen pritvor do 30 dana|https://www.danas.rs/vesti/drustvo/pavle-bihalij-pritvor-30-dana/
+danas|2026-11-25T19:24:53Z|Rijera pred Gent: Želim i pobedu i dobru igru|https://www.danas.rs/sport/rijera-gent-zvezda/
+danas|2026-11-25T19:23:43Z|Tragedija u Egiptu: Najmanje 30 poginulih u požaru nakon eksplozije cisterne s gorivom|https://www.danas.rs/svet/egipat-poginuli-u-pozaru-eksplozija/
+danas|2026-11-25T19:17:46Z|Novi skup podrške uhapšenom Draganu Vučićeviću ispred PS Voždovac|https://www.danas.rs/vesti/drustvo/novi-skup-podrske-uhapsenom-draganu-vucicevicu-ispred-ps-vozdovac/
+danas|2026-11-25T19:10:36Z|Tužilački strah i tigar od papira|https://www.danas.rs/dijalog/licni-stavovi/tuzilacki-strah-i-tigar-od-papira/
+danas|2026-11-25T19:02:29Z|Savet Čarlija Čaplina koji je Sofiji Loren promenio život: „Moraš da naučiš da kažeš ne“|https://www.danas.rs/kultura/carli-caplin-savet-sofija-loren/
+danas|2026-11-25T18:57:19Z|Sin Vojislava Šešelja u delegaciji Srbije u Parlamentarnom forumu sa Republikom Srpskom|https://www.danas.rs/vesti/politika/sin-vojislava-seselja-u-delegaciji-srbije-u-parlamentarnom-forumu-sa-republikom-srpskom/
+danas|2026-11-25T18:51:48Z|Priveden Dragan J. Vučićević, glavni urednik i vlasnik Informera|https://www.danas.rs/bbc-news-serbian/priveden-dragan-j-vucicevic-glavni-urednik-i-vlasnik-informera/
+danas|2026-11-25T18:41:42Z|Đoan Penjaroja i Karlik Džons se složili kako je Partizan stigao do trijumfa u Dubaiju|https://www.danas.rs/sport/djoan-penjaroja-karlik-dzons-dubai-partizan/
+danas|2026-11-25T18:38:46Z|Ambasada SAD u Prištini: Selektivno sprovođenje zakona i postupka ne doprinosti stabilnosti|https://www.danas.rs/vesti/politika/ambasada-sad-u-pristini-selektivno-sprovodjenje-zakona-i-postupka-ne-doprinosti-stablinosti/
+danas|2026-11-25T18:36:23Z|U slučaju otkazivanja Ekspa, Srbija bi plaćala odštetu, a ne penale|https://www.danas.rs/vesti/ekonomija/u-slucaju-otkazivanja-ekspa-srbija-bi-placala-odstetu-a-ne-penale/
+danas|2026-11-25T18:21:11Z|Uhapšeno troje rukovodilaca „Metanolsko – sirćetnog kompleksa“ (MSK) ad Kikinda zbog organizovanja radnika na odlaske na mitinge SNS-a|https://www.danas.rs/vesti/ekonomija/uhapseno-troje-rukovodilaca-metanolsko-sircetnog-kompleksa-msk-ad-kikinda-zbog-organizovanja-radnika-na-odlaske-na-mitinge-sns-a/
+danas|2026-11-25T18:20:53Z|Šta je najavio Igor Dodik?|https://www.danas.rs/svet/igor-dodik-najavio-povecanje-plata-i-smene-u-javnim-preduzecima-u-republici-srpskoj/
+danas|2026-11-25T18:08:25Z|Partizan srušio prokletstvo Dubaija, Karlik Džons crno-beli šeik|https://www.danas.rs/sport/dubai-partizan-livestream-prenos-uzivo-online/
+danas|2026-11-25T18:07:31Z|Da li je Alta banka naprečac gurnuta u bankrot da bi se zameli tragovi?|https://www.danas.rs/vesti/ekonomija/alta-banka-bankrot-namerno-tragovi/
+danas|2026-11-25T18:06:41Z|Nikolina Šljivić iznela odbranu nakon hapšenja|https://www.danas.rs/svet/nikolina-sljivic-iznela-odbranu/
+danas|2026-11-25T17:58:15Z|Policija: Uhapšen zbog sumnje da je varao građane da su im članovi porodice povređeni i uzimao novac|https://www.danas.rs/vesti/drustvo/policija-uhapsen-zbog-sumnje-da-je-varao-gradjane-da-su-im-clanovi-porodice-povredjeni-i-uzimao-novac/
+danas|2026-11-25T17:51:03Z|'Stižeš Duolingo od Skupštine?': Zašto su toliko gledane sednice parlamenta Srbije|https://www.danas.rs/bbc-news-serbian/stizes-duolingo-od-skupstine-zasto-su-toliko-gledane-sednice-parlamenta-srbije/
+danas|2026-11-25T17:50:13Z|Sahrana Milana Jovanovića sutra u Vrčinu: Njegova sudbina simbol stradanja novinara pod SNS|https://www.danas.rs/vesti/drustvo/sahrana-milana-jovanovica-sutra-u-vrcinu-njegova-sudbina-simbol-stradanja-novinara-pod-sns/
+danas|2026-11-25T17:37:59Z|AMSS: Putevi prohodni i bez snega, opasnost od poledice|https://www.danas.rs/vesti/drustvo/amss-putevi-prohodni-i-bez-snega-opasnost-od-poledice/
+danas|2026-11-25T17:36:21Z|Advokat Ninić objavio dokument: Suprug ministarke prijavio 129,5 miliona dinara dobitaka od klađenja|https://www.danas.rs/vesti/ekonomija/advokat-ivan-ninic-objavio-kako-je-damir-handanovic-prijavio-dobitak-od-1295-miliona-dinara-na-kladionici-mozzart/
+danas|2026-11-25T17:26:51Z|Vojska SAD detonirala pet tona nestabilne eksplozivne hemikalije uprkos strahovanju meštana|https://www.danas.rs/svet/vojska-sad-detonirala-pet-tona/
+danas|2026-11-25T17:12:39Z|Međak: Nova vlast ima istorijsku priliku da uvede Srbiju u EU, ali je pitanje da li će hteti|https://www.danas.rs/vesti/politika/medjak-nova-vlast-srbija-u-eu/
+danas|2026-11-25T16:43:56Z|Podignut optužni predlog protiv načelnika Gradske uprave Novog Sada Saše Bilanovića: Tužilaštvo traži pet godina zatvora|https://www.danas.rs/vesti/drustvo/podignut-optuzni-predlog-protiv-nacelnika-gradske-uprave-novog-sada-sase-bilanovica-tuzilastvo-trazi-pet-godina-zatvora/
+danas|2026-11-25T16:41:28Z|Čupić sutra raspisuje predsedničke izbore|https://www.danas.rs/vesti/politika/cupic-raspisuje-predsednicke-izbore/
+danas|2026-11-25T16:20:25Z|ANEM osudio vređanje novinarke N1 u Beogradu i ometanje ekipe N1 u Obrenovcu|https://www.danas.rs/vesti/drustvo/anem-osudio-vredjanje-novinarke-n1-u-beogradu-i-ometanje-ekipe-n1-u-obrenovcu/
+danas|2026-11-25T16:09:33Z|Pijetet prema Crkvi, izbegavanje tlapnji o njenom progonu i nesnalaženje: Minut ćutanja za Irineja Bulovića u Narodnoj skupštini|https://www.danas.rs/vesti/drustvo/pijetet-prema-crkvi-izbegavanje-tlapnji-o-njenom-progonu-i-nesnalazenje-minut-cutanja-za-irineja-bulovica-u-narodnoj-skupstini/
+b92|2026-11-25T23:00:00Z|Na današnji dan, 26. novembar|https://www.b92.net/info/razno/288162/na-danasnji-dan-26-novembar/vest
+b92|2026-11-25T22:53:00Z|Rat – 1.735. dan: NATO žestoko preti; Moskva čeka odgovor; "Pokazaćemo Rusiji gde su joj granice" FOTO/VIDEO|https://www.b92.net/info/svet/287868/rat-u-ukrajini-1735-dan/vest
+b92|2026-11-25T22:40:00Z|"Rusija se sprema da anektira još dva velika regiona"|https://www.b92.net/info/svet/288168/obavestajna-sluzba-gruzije-rusija-se-sprema-da-anektira-jos-dva-velika-regiona/vest
+b92|2026-11-25T22:29:00Z|Snažne eksplozije odjeknule u Rijadu|https://www.b92.net/info/svet/288167/snazne-eksplozije-odjeknule-u-rijadu-civilna-zastita-saudijske-arabije-opasnost-prosla/vest
+b92|2026-11-25T22:14:00Z|Moskva: "Nastavićemo rat dok ne postignemo ciljeve"|https://www.b92.net/info/svet/288166/moskva-nastavicemo-rat-dok-ne-postignemo-ciljeve/vest
+b92|2026-11-25T21:58:00Z|Novine: "Završeno konstituisanje republičkog parlamenta"; "Picula bez uvijanja – tek ćemo ucenjivati Beograd"|https://www.b92.net/info/razno/288159/novine-zavrseno-konstituisanje-republickog-parlamenta-picula-bez-uvijanja-tek-cemo-ucenjivati-beograd/vest
+b92|2026-11-25T21:42:00Z|Naređenje je izdato: "Rasporedite nuklearno oružje"|https://www.b92.net/info/svet/288161/kim-dzong-un-nalozio-sirenje-nuklearnog-arsenala/vest
+b92|2026-11-25T21:30:00Z|Zapalio se muškarac ispred Ministarstva kulture u Varšavi VIDEO|https://www.b92.net/info/svet/288157/zapalio-se-muskarac-ispred-ministarstva-kulture-u-varsavi-video/vest
+b92|2026-11-25T21:15:00Z|Studentska lista predstavila plan zaštite srpske baštine na Kosovu i Metohiji|https://www.b92.net/info/politika/288156/studentska-lista-predstavila-plan-zastite-srpske-bastine-na-kosovu-i-metohiji/vest
+b92|2026-11-25T21:00:00Z|Hrvatska ucenjuje Crnu Goru?|https://www.b92.net/info/region/288153/milatovic-kada-je-usla-u-eu-hrvatska-takodje-nije-resila-granicno-pitanje-sa-slovenijom/vest
+b92|2026-11-25T20:54:00Z|Čupić raspisuje predsedničke izbore u Srbiji; Dan odluke – 27. decembar|https://www.b92.net/info/politika/288151/cupic-raspisuje-predsednicke-izbore-u-srbiji-dan-odluke-27-decembar/vest
+b92|2026-11-25T20:26:00Z|Bratu vlasnika Alta banke određen pritvor|https://www.b92.net/info/hronika/288145/bratu-vlasnika-alta-banke-odredjen-pritvor/vest
+b92|2026-11-25T20:19:00Z|Vučić o Vučićeviću: "Uhapsili su ga zbog verbalnog delikta"|https://www.b92.net/info/politika/288142/vucic-o-vucicevicu-uhapsili-su-ga-zbog-verbalnog-delikta/vest
+b92|2026-11-25T19:58:00Z|Javio se Zelenski: Udarili smo jako – raznesen je VIDEO|https://www.b92.net/info/svet/288140/zelenski-ukrajinski-dronovi-pogodili-ruski-vojni-aerodrom/vest
+b92|2026-11-25T19:52:00Z|Oglasio se Treće OJT u Beogradu: Vodi se 5 postupaka zbog iznude i izazivanja opšte opasnosti|https://www.b92.net/info/hronika/288136/oglasio-se-trece-ojt-u-beogradu-vodi-se-5-postupaka-zbog-iznude-i-izazivanja-opste-opasnosti/vest
+b92|2026-11-25T19:25:00Z|Jeziva eksplozija kod Kaira: Najmanje 30 mrtvih, 15 povređenih; Vatra guta vozila FOTO/VIDEO|https://www.b92.net/info/svet/288126/zapalio-se-kamion-cisterna-na-obilaznici-u-egiptu-poginulo-30-povredjeno-15-osoba/vest
+b92|2026-11-25T19:09:00Z|Određen pritvor Bihaliju: Postoji opasnost od bekstva i uticanja na svedoke|https://www.b92.net/info/hronika/288125/odredjen-pritvor-bihaliju-osumnjicenom-da-je-ostetio-budzet-za-225-miliona-dinara/vest
+b92|2026-11-25T19:03:00Z|Eksplozija u fabrici municije u Ajovi: Uništavanje VIDEO|https://www.b92.net/info/svet/288122/americka-vojska-izvela-kontrolisanu-eksploziju-u-ajovi-unisten-opasan-materijal/vest
+b92|2026-11-25T18:41:00Z|Uhapšeno rukovodstvo MSK Kikinda: Radnicima plaćali za odlazak na SNS mitinge|https://www.b92.net/info/hronika/288117/uhapseno-rukovodstvo-msk-kikinda-radnicima-placali-za-odlazak-na-sns-mitinge/vest
+b92|2026-11-25T18:28:00Z|Volkovu određen kućni pritvor sa nanogicom: Ne sme da napušta stan bez odobrenja suda|https://www.b92.net/info/hronika/288112/volkovu-odredjen-kucni-pritvor-sa-nanogicom-ne-sme-da-napusta-stan-bez-odobrenja-suda/vest
+n1|2026-11-25T13:00:00Z|Uhapšen Pavle Bihali, sumnja se da je novac za kampanju 2022. prebacio na svoj račun i ostavio budžet bez 22,5 miliona dinara|https://n1info.rs/vesti/uhapsen-pavle-bihali-sumnja-se-da-je-zloupotrebio-vise-od-22-miliona-dinara/
+n1|2026-11-25T12:50:00Z|Putin preti Ukrajini odmazdom zbog napada na ruske rafinerije|https://n1info.rs/svet/putin-preti-ukrajini-odmazdom-zbog-napada-na-ruske-rafinerije/
+n1|2026-11-25T12:40:00Z|Ukrajinski ministar odgovorio Putinu: Ako vam smetaju napadi na rafinerije, okončajte rat|https://n1info.rs/svet/ukrajinski-ministar-odgovorio-putinu-ako-vam-smetaju-napadi-na-rafinerije-okoncajte-rat/
+n1|2026-11-25T12:30:00Z|Sutra izmenjena nastava i skraćeni časovi u Prvoj tehničkoj školi u Kragujevcu gde je učenik pucao|https://n1info.rs/vesti/sutra-izmenjena-nastava-i-skraceni-casovi-u-prvoj-tehnickoj-skoli-u-kragujevcu-gde-je-ucenik-pucao/
+n1|2026-11-25T12:20:00Z|Pucnjava u školi u Kragujevcu uznemirila javnost i ponovo otvorila pitanje bezbednosti|https://n1info.rs/vesti/pucnjava-u-skoli-u-kragujevcu-uznemirila-javnost-i-ponovo-otvorila-pitanje-bezbednosti/
+n1|2026-11-25T12:10:00Z|Bakić: Skoro sigurno ćemo ići na privremeno finansiranje, čak iako Vlada bude u decembru|https://n1info.rs/biznis/bakic-skoro-sigurno-cemo-ici-na-privremeno-finansiranje-cak-iako-vlada-bude-u-decembru/
+n1|2026-11-25T12:00:00Z|Teče rok za novi budžet: Koliko je izvesno da će nova godina krenuti sa privremenim finansiranjem?|https://n1info.rs/biznis/tece-rok-za-novi-budzet-koliko-je-izvesno-da-ce-nova-godina-krenuti-sa-privremenim-finansiranjem/
+n1|2026-11-25T11:50:00Z|Selaković i Mesarović podneli ostavke na ministarske funkcije|https://n1info.rs/vesti/selakovic-i-mesarovic-podneli-ostavke-na-ministarske-funkcije/
+n1|2026-11-25T11:40:00Z|Eparhija bačka objavila datum opela i sahrane mitropolita Irineja|https://n1info.rs/vesti/eparhija-backa-objavila-datum-opela-i-sahrane-mitropolita-irineja/
+n1|2026-11-25T11:30:00Z|Petoro vojnika poginulo u padu helikoptera u Turskoj|https://n1info.rs/svet/petoro-vojnika-poginulo-u-padu-helikoptera-u-turskoj/
+n1|2026-11-25T11:20:00Z|Umro novinar i nekadašnji generalni direktor RTS-a Nenad Ristić|https://n1info.rs/vesti/umro-novinar-nekadasnji-generalni-direktor-rts-nenad-ristic/
+n1|2026-11-25T11:10:00Z|Apelacioni sud ukinuo rešenje kojim je pomilovani za gaženje studentkinje Sonje Ponjavić pušten na slobodu|https://n1info.rs/vesti/apelacioni-sud-ukinuo-resenje-kojim-je-pomilovani-za-gazenje-studentkinje-sonje-ponjavic-pusten-na-slobodu/
+nova|2026-11-25T14:31:00Z|Stručnjaci o pucnjavi u Kragujevcu: Unaprediti bezbednost, revidirati zakone|https://nova.rs/vesti/hronika/strucnjaci-o-pucnjavi-u-kragujevcu-unaprediti-bezbednost-revidirati-zakone/
+nova|2026-11-25T14:23:42Z|Tramp: SAD obezbedile sredstva za rat protiv Irana do kraja januara|https://nova.rs/vesti/svet/tramp-sad-obezbedile-sredstva-za-rat-protiv-irana-do-kraja-januara/
+nova|2026-11-25T14:02:47Z|Advokat otkriva kolika kazna preti vlasniku "Informera"|https://nova.rs/vesti/hronika/advokat-otkriva-kolika-kazna-preti-vlasniku-informera/
+nova|2026-11-25T13:55:06Z|Dragana Đorđević imenovana za generalnog sekretara predsednika Republike|https://nova.rs/vesti/politika/dragana-djordjevic-imenovana-za-generalnog-sekretara-predsednika-republike/
+nova|2026-11-25T13:49:41Z|Evakuisani posetioci i zaposleni iz robne kuće IKEA u Beogradu|https://nova.rs/vesti/hronika/evakuisani-posetioci-i-zaposleni-iz-robne-kuce-ikea-u-beogradu/
+nova|2026-11-25T13:04:27Z|"Ovo je tek početak": Oglasio se Jovo Bakić o hapšenju Dragana J. Vučićevića|https://nova.rs/vesti/politika/oglasio-se-jovo-bakic-o-hapsenju-dragana-j-vucicevica/
+nova|2026-11-25T12:59:52Z|Srdanović: Jedan od sledećih koraka da Čupić raspiše predsedničke izbore, brzo posle toga izlazimo sa kandidatom|https://nova.rs/vesti/politika/srdanovic-jedan-od-sledecih-koraka-da-cupic-raspise-predsednicke-izbora-brzo-posle-toga-izlazimo-sa-kandidatom/
+nova|2026-11-25T12:21:52Z|Krivična prijava protiv Vučića i Brnabić zbog nanošenja štete imovini Telekoma|https://nova.rs/vesti/politika/krivicna-prijava-protiv-vucica-i-brnabic-zbog-nanosenja-stete-imovini-telekoma/
+nova|2026-11-25T12:02:37Z|Preminuo Aleksandar Crkvenjakov, novinar i nekadašnji generalni direktor RTS-a|https://nova.rs/vesti/drustvo/preminuo-aleksandar-crkvenjakov-novinar-i-nekadasnji-generalni-direktor-rts-a/
+nova|2026-11-25T12:00:50Z|Amerika nadomak odluke o povlačenju vojske iz Evrope: Nemačka ima najviše razloga za strah|https://nova.rs/vesti/svet/amerika-nadomak-odluke-o-povlacenju-vojske-iz-evrope-nemacka-ima-najvise-razloga-za-strah/
+politika|2026-11-25T20:00:00Z|Чупић сутра расписује председничке изборе|https://www.politika.rs/sr/clanak/999001/cupic-izbori
+politika|2026-11-25T20:10:00Z|Одређен притвор Павлу Бихалију|https://www.politika.rs/sr/clanak/999002/bihali
+`;
+
+const items = raw.trim().split('\n').map((l, i) => {
+  const [source, ts, title, url] = l.split('|');
+  return { id: `${source}-${i}`, source, time: Date.parse(ts), title, url };
+});
+
+// Pairs that are the same story and SHOULD merge (by id-substring title match).
+const SHOULD = [
+  ['Pavlu Bihaliju', 'Određen pritvor Bihaliju'],
+  ['Pavlu Bihaliju', 'Одређен притвор Павлу'],
+  ['Tragedija u Egiptu', 'Jeziva eksplozija kod Kaira'],
+  ['Uhapšeno troje rukovodilaca', 'Uhapšeno rukovodstvo MSK'],
+  ['Čupić sutra raspisuje', 'Čupić raspisuje predsedničke'],
+  ['Čupić sutra raspisuje', 'Чупић сутра'],
+  ['Vojska SAD detonirala', 'Eksplozija u fabrici municije'],
+  ['Pucnjava u školi u Kragujevcu', 'Stručnjaci o pucnjavi'],
+];
+// Pairs that look alike but are different stories and SHOULD NOT merge.
+const SHOULDNT = [
+  ['Bratu vlasnika Alta banke', 'Određen pritvor Bihaliju'],
+  ['Volkovu određen', 'Određen pritvor Bihaliju'],
+  ['Tragedija u Egiptu', 'Snažne eksplozije odjeknule'],
+];
+
+const byTitle = (s) => items.find((x) => x.title.startsWith(s))?.id;
+
+function run(opts, verbose) {
+  const clusters = clusterItems(items, opts);
+  const where = new Map();
+  clusters.forEach((c, ci) => c.items.forEach((id) => where.set(id, ci)));
+  const same = ([a, b]) => where.get(byTitle(a)) === where.get(byTitle(b));
+  const hit = SHOULD.filter(same).length;
+  const bad = SHOULDNT.filter(same).length;
+  if (verbose) {
+    for (const p of SHOULD) if (!same(p)) console.log('  MISSED  ', p.join('  <>  '));
+    for (const p of SHOULDNT) if (same(p)) console.log('  WRONG   ', p.join('  <>  '));
+    console.log('\n  Multi-item clusters:');
+    for (const c of clusters.filter((c) => c.items.length > 1)) {
+      console.log(`  [${c.sources} src] ` + c.items.map((id) => {
+        const it = items.find((x) => x.id === id);
+        return `${it.source}: ${it.title.slice(0, 55)}`;
+      }).join('\n           '));
+    }
+  }
+  return { hit, bad, clusters: clusters.length };
+}
+
+console.log('threshold  merged/' + SHOULD.length + '  false/' + SHOULDNT.length + '  clusters');
+for (const t of [0.15, 0.2, 0.25, 0.3, 0.35, 0.4]) {
+  const r = run({ threshold: t });
+  console.log(`  ${t.toFixed(2)}       ${r.hit}          ${r.bad}        ${r.clusters}`);
+}
+const T = Number(process.argv[2] || 0.25);
+console.log(`\nDetail at threshold ${T}:`);
+const r = run({ threshold: T }, true);
+if (r.bad > 0 || r.hit < SHOULD.length - 1) process.exitCode = 1;

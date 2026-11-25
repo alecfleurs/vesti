@@ -1,0 +1,6 @@
+{
+  "name": "Nova",
+  "home": "https://nova.rs/",
+  "feeds": ["https://nova.rs/feed/"],
+  "color": "#1565c0"
+}

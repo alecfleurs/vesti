@@ -1,0 +1,14 @@
+{
+  "name": "vesti",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node scripts/test-cluster.mjs"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "jsdom": "^26.1.0"
+  },
+  "engines": { "node": ">=20" }
+}

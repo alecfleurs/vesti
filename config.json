@@ -1,0 +1,18 @@
+{
+  "title": "Vesti",
+  "retainHours": 72,
+  "extractHours": 48,
+  "maxItemsPerSource": 80,
+  "maxExtractPerRun": 150,
+  "sourceOrder": ["n1", "nova", "danas", "b92", "politika", "blic", "forbes-n1"],
+  "exclude": [
+    "/(zabava|showbiz|show-biz|horoskop|astro|rijaliti|zvezde|tracevi|lifestyle|superzena|kviz|igrice)(/|$)",
+    "/(najave-emisija|video/dnevnik|video/dan-uzivo)(/|$)"
+  ],
+  "cluster": {
+    "threshold": 0.25,
+    "strongThreshold": 0.5,
+    "windowHours": 36,
+    "minShared": 2
+  }
+}

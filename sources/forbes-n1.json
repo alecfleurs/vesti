@@ -1,0 +1,6 @@
+{
+  "name": "Forbes Srbija",
+  "home": "https://forbes.n1info.rs/",
+  "feeds": ["https://forbes.n1info.rs/feed/"],
+  "color": "#212121"
+}

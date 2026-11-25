@@ -1,0 +1,6 @@
+{
+  "name": "Politika",
+  "home": "https://www.politika.rs/",
+  "feeds": ["https://www.politika.rs/rss/"],
+  "color": "#37474f"
+}

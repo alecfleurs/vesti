@@ -1,0 +1,7 @@
+{
+  "name": "B92",
+  "home": "https://www.b92.net/",
+  "feeds": ["https://www.b92.net/rss/b92/info", "https://www.b92.net/rss/biz"],
+  "exclude": ["/english/"],
+  "color": "#0d47a1"
+}
