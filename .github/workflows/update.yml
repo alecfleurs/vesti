@@ -20,9 +20,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -61,5 +58,13 @@ jobs:
         with:
           path: dist
 
+  # Separate job: deploying in the same job as the upload races the artifact API ("Found 0 artifacts").
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
       - id: deploy
         uses: actions/deploy-pages@v4
