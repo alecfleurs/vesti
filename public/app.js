@@ -38,6 +38,20 @@ const S = {
 };
 
 const app = document.getElementById('app');
+
+/* ---------- usage stats (GoatCounter) ---------- */
+// Pageviews count devices (GoatCounter dedupes visitors per day); events count actions.
+// Paths are fixed names: no titles, URLs or anything from the link fragment leave the device.
+const trackQueue = [];
+function track(name, isEvent = true) {
+  const send = () => window.goatcounter.count({ path: name, title: name, event: isEvent });
+  if (window.goatcounter?.count) send();
+  else if (trackQueue.length < 20) trackQueue.push(send);
+}
+(function flushWhenReady(tries = 0) {
+  if (window.goatcounter?.count) return trackQueue.splice(0).forEach((f) => f());
+  if (tries < 40) setTimeout(() => flushWhenReady(tries + 1), 500);
+})();
 const $ = (s, r = document) => r.querySelector(s);
 
 /* ---------- text ---------- */
@@ -173,6 +187,11 @@ async function load(pass) {
     }
     S.index = index;
     S.lastLoad = Date.now();
+    if (!S.counted) {
+      S.counted = true;
+      track(isStandalone() ? 'open-app' : 'open-browser', false);
+    }
+    if (pass) track(S.fromLink ? 'unlock-link' : 'unlock-password');
     document.title = index.title || 'Vesti';
     pruneRead();
     route();
@@ -507,6 +526,7 @@ function renderUnlock(err = '') {
     const btn = $('#unlock button');
     btn.textContent = 'Otključavam…';
     btn.disabled = true;
+    S.fromLink = false;
     await load($('#pass').value);
   });
   $('#pass').focus();
@@ -722,6 +742,7 @@ window.addEventListener('beforeinstallprompt', (e) => {
   if (S.index && !location.hash.startsWith('#/a/')) route(); // reveal the install button / banner, never mid-article
 });
 window.addEventListener('appinstalled', () => {
+  track('installed');
   installEvt = null;
   store.set('installDismissed', true);
   toast('Aplikacija je instalirana');
@@ -733,10 +754,12 @@ async function doInstall() {
   if (installEvt) {
     installEvt.prompt();
     const { outcome } = await installEvt.userChoice;
+    track(outcome === 'accepted' ? 'install-accepted' : 'install-declined');
     installEvt = null;
     if (outcome === 'accepted') store.set('installDismissed', true);
     return route();
   }
+  track('install-ios-guide');
   showSheet(`<h2>Instaliraj na iPhone</h2>
     <ol class="steps"><li>Dodirni dugme <b>Deli</b> <span class="ios-share">${I.share}</span> na dnu Safarija</li>
     <li>Izaberi <b>Dodaj na početni ekran</b></li><li>Potvrdi sa <b>Dodaj</b></li></ol>
@@ -750,6 +773,7 @@ function shareLink() {
 async function doShare() {
   const url = shareLink();
   if (!url) return toast('Lozinka nije sačuvana na ovom uređaju');
+  track('share-link');
   const text = 'Vesti bez reklama, sa svih portala na jednom mestu. Otvori link i instaliraj aplikaciju:';
   if (navigator.share) {
     try {
@@ -798,6 +822,7 @@ if (!('DecompressionStream' in window) || !crypto.subtle) {
 } else {
   app.innerHTML = '<p class="empty">Učitavam…</p>';
   const linkPass = takeLinkPassword();
+  S.fromLink = !!linkPass;
   if (linkPass) store.del('key'); // a fresh link wins over a stale saved key
   load(linkPass || undefined);
 }
