@@ -37,7 +37,7 @@ const S = {
   lastLoad: 0,
 };
 
-const APP_VERSION = '1.9';
+const APP_VERSION = '2.0';
 const APP_BUILD = '__BUILD__'; // replaced at build time with commit + date
 
 const app = document.getElementById('app');
@@ -105,6 +105,13 @@ function ago(t) {
 
 /* ---------- icons ---------- */
 const I = {
+  play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4.5" height="14" rx="1.2"/><rect x="13.5" y="5" width="4.5" height="14" rx="1.2"/></svg>',
+  prev: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 6h2v12H7zM20 6.8v10.4a.8.8 0 0 1-1.2.7L10.6 12.7a.8.8 0 0 1 0-1.4l8.2-5.2a.8.8 0 0 1 1.2.7z"/></svg>',
+  next: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M15 6h2v12h-2zM4 6.8v10.4a.8.8 0 0 0 1.2.7l8.2-5.2a.8.8 0 0 0 0-1.4L5.2 6.1A.8.8 0 0 0 4 6.8z"/></svg>',
+  headphones: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4.5" height="7" rx="1.5"/><rect x="16.5" y="14" width="4.5" height="7" rx="1.5"/></svg>',
+  bookmark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5h12a1 1 0 0 1 1 1v16l-7-4.5-7 4.5v-16a1 1 0 0 1 1-1z"/></svg>',
+  bookmarkOn: '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6 3.5h12a1 1 0 0 1 1 1v16l-7-4.5-7 4.5v-16a1 1 0 0 1 1-1z"/></svg>',
   thread: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="12" r="2.2"/><path d="M6 8.2v7.6M8 6.8c5 .4 8 2.4 8.4 3.6M8 17.2c5-.4 8-2.4 8.4-3.6"/></svg>',
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
   share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>',
@@ -344,7 +351,8 @@ function briefingLocal() {
     .map((x) => x.c);
 }
 // Swipe / next-previous follow the screen the story was opened from.
-const storyOrder = () => (S.ctx === 'brief' ? briefing() : S.ctx === 'search' ? S.results || [] : ranked());
+const storyOrder = () =>
+  S.ctx === 'brief' ? briefing() : S.ctx === 'search' ? S.results || [] : S.ctx === 'saved' ? savedOrder() : listOrder();
 
 /* ---------- search ---------- */
 // Fold for matching: Cyrillic -> Latin, no diacritics, lowercase. Keeps a map back to original positions
@@ -516,6 +524,14 @@ function renderResults() {
       .join('')}</ul>`;
 }
 
+// The home list's order. With "Sakrij pročitane", read stories drop out, except the ones opened
+// since leaving the list (so swiping keeps working while you read).
+function listOrder() {
+  const list = ranked();
+  if (S.prefs.readMode !== 'hide') return list;
+  return list.filter((c) => isUnread(c) || S.keep?.has(c.id));
+}
+
 const isUnread = (c) => !S.read[c.id] || c.l > S.read[c.id] + 1000;
 
 /* ---------- views ---------- */
@@ -551,11 +567,12 @@ function briefCard() {
   if (list.length < 3) return '';
   const unread = list.filter(isUnread).length;
   const mins = Math.max(2, Math.round(list.length * 0.35));
-  return `<a class="brief-card${unread ? '' : ' done'}" href="#/brief">
+  return `<div class="brief-card${unread ? '' : ' done'}"><a class="bc-link" href="#/brief">
     <div class="bc-head"><span class="bc-badge">Ukratko</span><span>${unread ? `${unread} od ${list.length} nepročitano` : 'Sve pročitano'} · oko ${mins} min</span></div>
     <div class="bc-title">Najvažnije u poslednja 24 sata</div>
-    <ol>${list.slice(0, 3).map((c) => `<li>${esc(lat(S.index.items[c.rep].t))}</li>`).join('')}</ol>
-    <span class="bc-go">Pročitaj ukratko →</span></a>`;
+    <ol>${list.slice(0, 3).map((c) => `<li>${esc(lat(S.index.items[c.rep].t))}</li>`).join('')}</ol></a>
+    <div class="bc-actions"><a class="bc-go" href="#/brief">Pročitaj ukratko →</a>
+      ${Voice.supported ? `<button class="bc-listen" data-act="listen-brief">${I.headphones}Poslušaj</button>` : ''}</div></div>`;
 }
 
 function renderBrief() {
@@ -569,6 +586,7 @@ function renderBrief() {
       <div class="brief-date">${esc(day.charAt(0).toUpperCase() + day.slice(1))}</div>
       <h1 class="page-title">Ukratko</h1>
       <p class="brief-sub">${list.length} najvažnijih vesti iz poslednja 24 sata, po tome koliko ih medija prenosi. Samo vesti, bez zabave i reklama.</p>
+      ${Voice.supported ? `<button class="listen-big" data-act="listen-brief">${I.play}<span>Poslušaj Ukratko<small>oko ${Math.max(3, Math.round(list.length * 0.6))} min, za put do posla</small></span></button>` : ''}
       <ol class="brief-list">${list
         .map((c, i) => {
           const it = idx.items[c.rep];
@@ -591,13 +609,14 @@ function renderBrief() {
 }
 
 function renderList() {
+  S.keep = new Set();
   const idx = S.index;
   const pass = store.get('pass');
   if (pass && !isStandalone()) {
     const want = '#k=' + encodeURIComponent(pass);
     if (location.hash !== want) history.replaceState(null, '', location.pathname + location.search + want);
   }
-  const list = ranked();
+  const list = listOrder();
   const shown = list.slice(0, S.limit);
   const unread = list.filter(isUnread).length;
   const thumbs = S.prefs.thumbs !== false;
@@ -630,11 +649,13 @@ function renderList() {
         <h1>${esc(idx.title || 'Vesti')}</h1>
         <div class="sub">Ažurirano ${ago(idx.generated)} · ${unread} nepročitanih</div></div>
       <div class="actions"><a class="icon-btn" href="#/search" aria-label="Pretraga">${I.search}</a>
+        <a class="icon-btn" href="#/saved" aria-label="Sačuvano">${I.bookmark}</a>
         <button class="icon-btn" data-act="refresh" aria-label="Osveži">${I.refresh}</button>
         <a class="icon-btn" href="#/settings" aria-label="Podešavanja">${I.gear}</a></div>
     </header>
     <main class="wrap">
       ${inAppHint()}
+      ${store.get('seenVersion') && store.get('seenVersion') !== APP_VERSION ? `<a class="update-note" href="#/changelog"><span class="cl-k new">Novo</span><span><b>Ažurirano na ${APP_VERSION}</b> · Šta je novo</span><button class="x" data-act="seen-version" aria-label="Zatvori">×</button></a>` : ''}
       ${!isInAppBrowser() && canOfferInstall() && !store.get('installDismissed') ? `<div class="install-banner">${I.install}
         <div class="grow"><b>Instaliraj Vesti</b><span>Kao prava aplikacija, bez pregledača</span></div>
         <button class="pill-btn" data-act="install">Instaliraj</button><button class="x" data-act="install-dismiss" aria-label="Zatvori">×</button></div>` : ''}
@@ -645,7 +666,7 @@ function renderList() {
       ${chips}
       ${S.tab === 'top' && !S.cat ? briefCard() : ''}
       <div class="list-tools"><span>${list.length} vesti</span><button class="link-btn" data-act="allread">Označi sve kao pročitano</button></div>
-      ${shown.length ? `<ul class="list">${cards}</ul>` : '<p class="empty">Nema vesti za prikaz.</p>'}
+      ${shown.length ? `<ul class="list">${cards}</ul>` : `<p class="empty">${S.prefs.readMode === 'hide' ? 'Sve vesti su pročitane. Nove stižu svakih 30 minuta.' : 'Nema vesti za prikaz.'}</p>`}
       ${list.length > S.limit ? `<button class="more" data-act="more">Prikaži još (${list.length - S.limit})</button>` : ''}
       <p class="foot">${Object.keys(idx.items).length} članaka iz ${idx.sources.length} izvora, spojeno u ${idx.clusters.length} vesti</p>
     </main>`;
@@ -701,9 +722,11 @@ function compareBlock(cluster, currentId) {
 
 async function renderArticle(itemId, clusterId) {
   const idx = S.index;
-  const it = idx.items[itemId];
+  const it = idx.items[itemId] || savedAsItem(itemId); // saved stories outlive the 3-day index
   if (!it) return (location.hash = '#/');
-  const src = srcById(it.s);
+  const src = it._src || srcById(it.s);
+  const saved = savedAll()[itemId];
+  S.cur = { id: itemId, article: null };
   const cluster = idx.clusters.find((c) => c.id === clusterId) || idx.clusters.find((c) => c.it.includes(itemId));
   if (cluster) {
     S.read[cluster.id] = Math.max(Date.now(), cluster.l);
@@ -711,13 +734,14 @@ async function renderArticle(itemId, clusterId) {
   }
   const others = (cluster?.it || []).filter((id) => id !== itemId && visible(id));
   S.lastStory = cluster?.id || null;
+  if (cluster) (S.keep ||= new Set()).add(cluster.id);
   const order = storyOrder();
-  const pos = cluster ? order.findIndex((c) => c.id === cluster.id) : -1;
+  const pos = order.findIndex((c) => c.id === (S.ctx === 'saved' ? clusterId : cluster?.id));
   const prev = pos > 0 ? order[pos - 1] : null;
   const next = pos >= 0 && pos < order.length - 1 ? order[pos + 1] : null;
   const navCard = (c, dir) => {
     if (!c) return '<span></span>';
-    const o = idx.items[c.rep];
+    const o = idx.items[c.rep] || savedAsItem(c.rep);
     return `<a class="nav-card ${dir}" href="#/a/${c.rep}/${c.id}" data-go="${dir === 'prev' ? -1 : 1}">
       <span class="nav-dir">${dir === 'prev' ? '← Prethodna' : 'Sledeća →'}</span><span class="nav-t">${esc(lat(o.t))}</span></a>`;
   };
@@ -736,6 +760,10 @@ async function renderArticle(itemId, clusterId) {
       <div class="kicker"><span class="src" style="--c:${esc(src.color)}">${esc(src.name)}</span><span>${ago(it.p)}</span>
         ${it.w ? `<span>${Math.max(1, Math.round(it.w / 220))} min čitanja</span>` : ''}<span class="byline"></span></div>
       <h1>${esc(lat(it.t))}</h1>
+      <div class="actions-row">
+        ${Voice.supported ? `<button class="act" data-act="listen">${I.headphones}<span>Slušaj</span></button>` : ''}
+        <button class="act${saved ? ' on' : ''}" data-act="save">${saved ? I.bookmarkOn : I.bookmark}<span>${saved ? 'Sačuvano' : 'Sačuvaj'}</span></button>
+      </div>
       ${timelineBlock(cluster)}
       ${others.length ? compareBlock(cluster, itemId) : ''}
       <div class="content">${it.x ? '<p class="notice">Učitavam…</p>' : ''}</div>
@@ -754,7 +782,8 @@ async function renderArticle(itemId, clusterId) {
   };
   if (!it.x) return fallback('Pun tekst ovog članka nije dostupan (plaćeni sadržaj, video ili sajt blokira preuzimanje).');
   try {
-    const a = await decrypt(await getBin(`data/a/${itemId}.bin`));
+    const a = saved?.html ? { html: saved.html, byline: saved.byline, image: saved.image } : await decrypt(await getBin(`data/a/${itemId}.bin`));
+    S.cur = { id: itemId, article: a };
     if (location.hash.split('/')[2] !== itemId) return; // user navigated away
     const body = document.createElement('div');
     body.className = 'body';
@@ -793,6 +822,44 @@ async function renderArticle(itemId, clusterId) {
   }
 }
 
+function voiceSettings() {
+  const local = Voice.localVoices();
+  const cur = Voice.pick();
+  const opts = (local.length ? local : Voice.voices())
+    .map((v) => `<option value="${esc(v.voiceURI)}"${cur && v.voiceURI === cur.voiceURI ? ' selected' : ''}>${esc(v.name)} (${esc(v.lang)})</option>`)
+    .join('');
+  return `<div class="panel-label">Čitanje naglas</div>
+    <section class="panel">
+      <div class="row"><div class="grow">Glas${local.length ? '' : '<div class="hint warn">Na telefonu nema srpskog glasa. Android: Podešavanja → Pristupačnost → Pretvaranje teksta u govor → Google → instaliraj srpski.</div>'}</div>
+        <select class="sel" data-act="voice">${opts || '<option>Nema glasova</option>'}</select></div>
+      <div class="row"><div class="grow">Brzina<div class="hint">${(S.prefs.rate || 1).toFixed(1)}×</div></div>
+        <input type="range" min="0.7" max="1.6" step="0.1" value="${S.prefs.rate || 1}" data-act="rate"></div>
+      <button class="row" data-act="voice-test"><div class="grow">Probaj glas</div>${I.play}</button>
+    </section>`;
+}
+
+/* ---------- changelog ---------- */
+async function renderChangelog() {
+  store.set('seenVersion', APP_VERSION);
+  app.innerHTML =
+    bar(`<a class="icon-btn" href="#/settings" aria-label="Nazad">${I.back}</a><span class="crumb"></span>`) +
+    `<main class="wrap"><h1 class="page-title">Šta je novo</h1><div id="cl"><p class="empty">Učitavam…</p></div></main>`;
+  hideSplash();
+  let log = [];
+  try {
+    log = await (await fetch('changelog.json', { cache: 'no-cache' })).json();
+  } catch {
+    $('#cl').innerHTML = '<p class="empty">Spisak promena trenutno nije dostupan.</p>';
+    return;
+  }
+  const kind = { Novo: 'new', Promena: 'chg', Ispravka: 'fix' };
+  $('#cl').innerHTML = log
+    .map((r) => `<section class="panel cl-ver"><div class="cl-head"><span class="cl-v">${esc(r.v)}</span>
+        <div><b>${esc(r.title)}</b><span>${esc(r.date)}${r.v === APP_VERSION ? ' · instalirano' : ''}</span></div></div>
+      <ul>${r.items.map(([k, t]) => `<li><span class="cl-k ${kind[k] || ''}">${esc(k)}</span>${esc(t)}</li>`).join('')}</ul></section>`)
+    .join('');
+}
+
 function renderSettings() {
   const idx = S.index;
   const repo = idx.repo;
@@ -815,6 +882,7 @@ function renderSettings() {
         <div class="row"><div class="grow">Font za čitanje</div>${seg('readfont', S.prefs.readfont || 'sans', [['sans', 'Moderan'], ['serif', 'Klasičan']])}</div>
         <div class="row"><div class="grow">Veličina teksta<div class="hint">${S.prefs.size}px</div></div>
           <input type="range" min="15" max="24" step="1" value="${S.prefs.size}" data-act="size"></div>
+        <div class="row"><div class="grow">Pročitane vesti<div class="hint">Zatamni ih ili ih potpuno skloni iz liste</div></div>${seg('readMode', S.prefs.readMode === 'hide' ? 'hide' : 'dim', [['dim', 'Zatamni'], ['hide', 'Sakrij']])}</div>
         <div class="row"><div class="grow">Slike u listi<div class="hint">Isključi za manju potrošnju podataka</div></div>
           <input type="checkbox" class="switch" data-act="thumbs" ${S.prefs.thumbs !== false ? 'checked' : ''}></div>
         <div class="row"><div class="grow">Zabava i zdravlje<div class="hint">Estrada, rijaliti, horoskop i zdravlje, kao kategorije Zabava i Zdravlje</div></div>
@@ -827,6 +895,7 @@ function renderSettings() {
           <input type="checkbox" class="switch" data-act="latin" ${S.prefs.latin ? 'checked' : ''}></div>
       </section>
 
+      ${Voice.supported ? voiceSettings() : ''}
       <div class="panel-label">Izvori</div>
       <section class="panel">
         ${idx.sources.map((s) => {
@@ -864,6 +933,7 @@ function renderSettings() {
         <button class="row" data-act="logout"><div class="grow">Zaboravi lozinku na ovom uređaju</div></button>
       </section>
       <div class="panel-label">O aplikaciji</div>
+      <section class="panel"><a class="row" href="#/changelog"><div class="grow">Šta je novo<div class="hint">Sve verzije i promene, od prve do ${APP_VERSION}</div></div><span class="go">›</span></a></section>
       <section class="panel about">
         <div class="about-head"><img src="icon.svg" alt="" width="52" height="52">
           <div><b>Pametniji čitač vesti</b><span>Verzija ${APP_VERSION}${APP_BUILD.startsWith('__') ? '' : ` · ${esc(APP_BUILD)}`}</span></div></div>
@@ -889,6 +959,8 @@ function renderSettings() {
           <li>U članku <b>prevuci levo ili desno</b> za sledeću ili prethodnu vest. Pročitana priča je pročitana u svim izvorima.</li>
           <li>Oznaka <b>Razvoj priče · 3</b> znači da je to treći korak iste priče. Prethodni koraci su u članku, pod <b>Tok priče</b>.</li>
           <li><b>Lupa</b> na početnom ekranu otvara pretragu.</li>
+          <li><b>Slušaj</b> u članku čita tekst naglas, a <b>Poslušaj</b> u Ukratko čita svih 20 vesti, za put do posla.</li>
+          <li><b>Sačuvaj</b> čuva vest za kasnije, i bez interneta. Sve sačuvano je pod ikonicom zastavice na početnom ekranu.</li>
           <li><b>Original</b> otvara članak na sajtu izvora, a <b>⤴</b> ga deli.</li>
           <li><b>↻</b> donosi najnovije vesti. Ako su starije od 5 minuta, pokreće novo prikupljanje (oko 2 minuta).</li>
         </ul>
@@ -1038,6 +1110,276 @@ async function shareArticle() {
   });
 }
 
+/* ---------- read aloud (Web Speech API) ---------- */
+// Text is queued as short segments: Chrome on Android cuts off long utterances, and short segments
+// make skipping to the next paragraph or story instant. Segments carry a `group` (paragraph or story).
+const ORD = ['Prva', 'Druga', 'Treća', 'Četvrta', 'Peta', 'Šesta', 'Sedma', 'Osma', 'Deveta', 'Deseta',
+  'Jedanaesta', 'Dvanaesta', 'Trinaesta', 'Četrnaesta', 'Petnaesta', 'Šesnaesta', 'Sedamnaesta', 'Osamnaesta', 'Devetnaesta', 'Dvadeseta'];
+
+const Voice = {
+  q: [],
+  i: 0,
+  playing: false,
+  token: 0,
+  title: '',
+  wake: null,
+  supported: 'speechSynthesis' in window,
+
+  voices() {
+    return this.supported ? speechSynthesis.getVoices() : [];
+  },
+  // Serbian first, then the closest languages a Serbian listener understands.
+  localVoices() {
+    const rank = (v) => ['sr', 'hr', 'bs', 'sh', 'cnr', 'sl', 'mk'].indexOf(v.lang.toLowerCase().split(/[-_]/)[0]);
+    return this.voices().filter((v) => rank(v) >= 0).sort((a, b) => rank(a) - rank(b) || (b.localService ? 1 : 0) - (a.localService ? 1 : 0));
+  },
+  pick() {
+    const all = this.voices();
+    return all.find((v) => v.voiceURI === S.prefs.voice) || this.localVoices()[0] || null;
+  },
+
+  chunks(text, group, extra = {}) {
+    const t = lat(String(text || '')).replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim();
+    if (!t) return [];
+    const out = [];
+    let cur = '';
+    for (const s of t.split(/(?<=[.!?…:;])\s+/)) {
+      if (cur && (cur + ' ' + s).length > 220) {
+        out.push(cur);
+        cur = s;
+      } else cur = cur ? cur + ' ' + s : s;
+    }
+    if (cur) out.push(cur);
+    return out.flatMap((c) => (c.length > 300 ? c.match(/.{1,240}(\s|$)/g) : [c])).map((text) => ({ text: text.trim(), group, ...extra }));
+  },
+
+  async start(segments, title) {
+    if (!this.supported) return toast('Ovaj pregledač ne podržava čitanje naglas');
+    this.stop(true);
+    this.q = segments;
+    this.i = 0;
+    this.title = title;
+    this.playing = true;
+    try {
+      this.wake = await navigator.wakeLock?.request('screen'); // keep the screen (and speech) on in the car
+    } catch {}
+    this.bar();
+    this.speak();
+  },
+
+  speak() {
+    if (!this.playing) return;
+    if (this.i >= this.q.length) return this.stop();
+    const seg = this.q[this.i];
+    seg.onStart?.();
+    const u = new SpeechSynthesisUtterance(seg.text);
+    const v = this.pick();
+    if (v) u.voice = v;
+    u.lang = v?.lang || 'sr-RS';
+    u.rate = S.prefs.rate || 1;
+    const token = ++this.token;
+    u.onend = () => {
+      if (token !== this.token || !this.playing) return;
+      this.i++;
+      this.speak();
+    };
+    u.onerror = (e) => {
+      if (token !== this.token || e.error === 'interrupted' || e.error === 'canceled') return;
+      this.i++;
+      this.speak();
+    };
+    speechSynthesis.speak(u);
+    this.bar();
+  },
+
+  // Android Chrome's pause() is unreliable: pausing cancels and resuming restarts the current segment.
+  toggle() {
+    if (this.playing) {
+      this.playing = false;
+      this.token++;
+      speechSynthesis.cancel();
+    } else {
+      this.playing = true;
+      this.speak();
+    }
+    this.bar();
+  },
+  skip(dir) {
+    const g = this.q[this.i]?.group;
+    let j = this.i;
+    if (dir > 0) while (j < this.q.length && this.q[j].group === g) j++;
+    else {
+      while (j > 0 && this.q[j - 1].group === g) j--; // start of this group
+      if (this.i - j < 1 && j > 0) {
+        const pg = this.q[j - 1].group;
+        j--;
+        while (j > 0 && this.q[j - 1].group === pg) j--;
+      }
+    }
+    this.i = Math.max(0, j);
+    this.token++;
+    speechSynthesis.cancel();
+    this.playing = true;
+    this.speak();
+  },
+  stop(silent) {
+    this.playing = false;
+    this.token++;
+    if (this.supported) speechSynthesis.cancel();
+    this.wake?.release?.().catch(() => {});
+    this.wake = null;
+    if (!silent) {
+      document.querySelector('.player')?.remove();
+      document.querySelectorAll('.speaking').forEach((el) => el.classList.remove('speaking'));
+    }
+  },
+
+  bar() {
+    let el = document.querySelector('.player');
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'player';
+      el.innerHTML = `<div class="pl-txt"><b></b><span></span></div>
+        <button data-pl="prev" aria-label="Prethodno">${I.prev}</button>
+        <button data-pl="toggle" class="pl-main" aria-label="Pauza"></button>
+        <button data-pl="next" aria-label="Sledeće">${I.next}</button>
+        <button data-pl="stop" aria-label="Zaustavi">×</button>`;
+      el.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-pl]');
+        if (!b) return;
+        const a = b.dataset.pl;
+        if (a === 'toggle') this.toggle();
+        else if (a === 'stop') this.stop();
+        else this.skip(a === 'next' ? 1 : -1);
+      });
+      document.body.appendChild(el);
+    }
+    const seg = this.q[this.i];
+    el.querySelector('b').textContent = this.title;
+    el.querySelector('span').textContent = seg?.label || '';
+    el.querySelector('.pl-main').innerHTML = this.playing ? I.pause : I.play;
+  },
+};
+
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible' && Voice.playing && !Voice.wake) {
+    try {
+      Voice.wake = await navigator.wakeLock?.request('screen');
+    } catch {}
+  }
+});
+if (Voice.supported) speechSynthesis.onvoiceschanged = () => {
+  if (location.hash === '#/settings') renderSettings();
+};
+
+function readArticleAloud(it) {
+  const body = document.querySelector('.body');
+  const title = lat(it.t);
+  const blocks = body ? [...body.querySelectorAll('p, h2, h3, h4, li, blockquote')].map((el) => el.textContent).filter((t) => t.trim().length > 2) : [it.l];
+  const total = blocks.length;
+  const segs = [...Voice.chunks(title + '.', 0, { label: 'Naslov' })];
+  blocks.forEach((b, n) => segs.push(...Voice.chunks(b, n + 1, { label: `Pasus ${n + 1} od ${total}` })));
+  track('listen-article');
+  Voice.start(segs, title);
+}
+
+function readBriefAloud() {
+  const list = briefing();
+  if (!list.length) return;
+  const now = new Date();
+  const part = now.getHours() < 11 ? 'Dobro jutro' : now.getHours() < 18 ? 'Dobar dan' : 'Dobro veče';
+  const day = now.toLocaleDateString('sr-Latn-RS', { weekday: 'long', day: 'numeric', month: 'long' });
+  const segs = Voice.chunks(`${part}. Ukratko, ${list.length} najvažnijih vesti, ${day}.`, -1, { label: 'Uvod' });
+  list.forEach((c, n) => {
+    const it = S.index.items[c.rep];
+    const onStart = () => {
+      S.read[c.id] = Math.max(Date.now(), c.l); // heard = read
+      store.set('read', S.read);
+      document.querySelectorAll('.brief-list li.speaking').forEach((el) => el.classList.remove('speaking'));
+      const li = document.querySelector(`.brief-list li[data-id="${c.id}"]`);
+      if (li) {
+        li.classList.add('speaking', 'read');
+        li.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+    };
+    const label = `${n + 1} od ${list.length}`;
+    const story = Voice.chunks(`${ORD[n] || n + 1 + '.'} vest. ${it.t}.`, n, { label });
+    story[0].onStart = onStart;
+    segs.push(...story, ...Voice.chunks(c.summary ?? summarize(bestLead(c)), n, { label }));
+  });
+  segs.push(...Voice.chunks('To je sve za sada. Srećan put.', 999, { label: 'Kraj' }));
+  track('listen-brief');
+  Voice.start(segs, 'Ukratko');
+}
+
+/* ---------- saved for later ---------- */
+// Saved stories keep their own copy (text + metadata) on the device, so they stay readable offline
+// and after they drop out of the 3-day news window.
+const SAVED_MAX = 80;
+const savedAll = () => store.get('saved', {});
+const isSaved = (id) => !!savedAll()[id];
+
+function saveArticle(id, article) {
+  const it = S.index.items[id];
+  if (!it) return;
+  const all = savedAll();
+  const src = srcById(it.s);
+  all[id] = {
+    t: it.t, s: it.s, u: it.u, p: it.p, l: it.l, i: it.i, h: it.h, c: it.c, w: it.w,
+    srcName: src.name, srcColor: src.color || '',
+    html: article?.html || '', byline: article?.byline || '', image: article?.image || '',
+    savedAt: Date.now(),
+  };
+  const ids = Object.keys(all).sort((a, b) => all[b].savedAt - all[a].savedAt);
+  for (const old of ids.slice(SAVED_MAX)) delete all[old];
+  try {
+    localStorage.setItem('vesti:saved', JSON.stringify(all));
+  } catch {
+    delete all[id];
+    return toast('Nema mesta za čuvanje. Obriši nešto iz Sačuvanog.');
+  }
+  track('save-article');
+  toast('Sačuvano za kasnije');
+}
+function unsaveArticle(id) {
+  const all = savedAll();
+  delete all[id];
+  store.set('saved', all);
+}
+// A saved story in the same shape as an index item (used when it is no longer in the index).
+function savedAsItem(id) {
+  const s = savedAll()[id];
+  if (!s) return null;
+  return { t: s.t, s: s.s, u: s.u, p: s.p, l: s.l, i: s.i, h: s.h, c: s.c, w: s.w, x: s.html ? 1 : 0, _src: { name: s.srcName, color: s.srcColor }, _saved: s };
+}
+function savedOrder() {
+  const all = savedAll();
+  return Object.keys(all)
+    .sort((a, b) => all[b].savedAt - all[a].savedAt)
+    .map((id) => ({ id: 'saved:' + id, rep: id }));
+}
+
+function renderSaved() {
+  const all = savedAll();
+  const ids = Object.keys(all).sort((a, b) => all[b].savedAt - all[a].savedAt);
+  app.innerHTML =
+    bar(`<a class="icon-btn" href="#/" aria-label="Nazad">${I.back}</a><span class="crumb"></span>`) +
+    `<main class="wrap">
+      <h1 class="page-title">Sačuvano</h1>
+      <p class="brief-sub">${ids.length ? `${ids.length} ${ids.length === 1 ? 'vest' : 'vesti'}, dostupne i bez interneta.` : 'Ovde se čuvaju vesti za kasnije. U članku dodirni <b>Sačuvaj</b>.'}</p>
+      <ul class="list">${ids
+        .map((id) => {
+          const s = all[id];
+          return `<li class="card saved-card" data-id="${id}"><a href="#/a/${id}/saved:${id}">
+            <div class="txt"><div class="meta"><span class="src" style="--c:${esc(s.srcColor)}">${esc(s.srcName)}</span><span>sačuvano ${ago(s.savedAt)}</span>${s.html ? '' : '<span>samo uvod</span>'}</div>
+            <h2>${esc(lat(s.t))}</h2></div>${S.prefs.thumbs !== false ? imgTag(s.h || s.i, 'thumb') : ''}</a>
+            <button class="unsave" data-unsave="${id}" aria-label="Ukloni">×</button></li>`;
+        })
+        .join('')}</ul>
+    </main>`;
+  hideSplash();
+}
+
 /* ---------- next / previous story ---------- */
 function goStory(dir) {
   const parts = (location.hash || '').slice(2).split('/');
@@ -1099,7 +1441,7 @@ function route() {
   if (isArt(h) && !isArt(current)) {
     S.from = current || '#/';
     S.hops = 1;
-    S.ctx = current === '#/brief' ? 'brief' : current === '#/search' ? 'search' : 'list';
+    S.ctx = { '#/brief': 'brief', '#/search': 'search', '#/saved': 'saved' }[current] || 'list';
   } else if (isArt(h) && isArt(current) && h !== current && !S.replacing) S.hops = (S.hops || 0) + 1;
   else if (!isArt(h)) S.hops = 0;
   S.replacing = false;
@@ -1114,12 +1456,19 @@ function route() {
   if (parts[0] === 'settings') return renderSettings();
   if (parts[0] === 'brief') return renderBrief();
   if (parts[0] === 'search') return renderSearch();
+  if (parts[0] === 'saved') return renderSaved();
+  if (parts[0] === 'changelog') return renderChangelog();
   renderList();
 }
 window.addEventListener('hashchange', route);
 
 /* ---------- events ---------- */
 app.addEventListener('click', (e) => {
+  const uns = e.target.closest('[data-unsave]');
+  if (uns) {
+    unsaveArticle(uns.dataset.unsave);
+    return renderSaved();
+  }
   const rec = e.target.closest('[data-recent]');
   if (rec) {
     $('#q').value = rec.dataset.recent;
@@ -1172,8 +1521,32 @@ app.addEventListener('click', (e) => {
       if (S.hops > 0 && history.length > S.hops) history.go(-S.hops); // back to the list or Ukratko, scroll kept
       else location.hash = S.from || '#/';
       return;
+    case 'voice-test':
+      return Voice.start(Voice.chunks('Dobro jutro. Ovo je Pametniji čitač vesti. Ovako će zvučati Ukratko na putu do posla.', 0, { label: 'Proba glasa' }), 'Proba glasa');
     case 'share-article':
       return shareArticle();
+    case 'listen': {
+      const [, , id] = location.hash.split('/');
+      const it = S.index.items[id] || savedAsItem(id);
+      if (it) readArticleAloud(it);
+      return;
+    }
+    case 'listen-brief':
+      e.preventDefault();
+      if (!location.hash.startsWith('#/brief')) location.hash = '#/brief';
+      return setTimeout(readBriefAloud, 50);
+    case 'save': {
+      const id = S.cur?.id;
+      if (!id) return;
+      if (isSaved(id)) {
+        unsaveArticle(id);
+        toast('Uklonjeno iz Sačuvanog');
+      } else saveArticle(id, S.cur.article);
+      const on = isSaved(id);
+      t.classList.toggle('on', on);
+      t.innerHTML = `${on ? I.bookmarkOn : I.bookmark}<span>${on ? 'Sačuvano' : 'Sačuvaj'}</span>`;
+      return;
+    }
     case 'brief-done': {
       for (const c of briefing()) S.read[c.id] = Math.max(Date.now(), c.l);
       store.set('read', S.read);
@@ -1184,6 +1557,10 @@ app.addEventListener('click', (e) => {
     case 'bigger':
       S.prefs.size = Math.min(24, Math.max(15, S.prefs.size + (t.dataset.act === 'bigger' ? 1 : -1)));
       return savePrefs();
+    case 'seen-version':
+      e.preventDefault();
+      store.set('seenVersion', APP_VERSION);
+      return renderList();
     case 'install':
       return doInstall();
     case 'install-dismiss':
@@ -1202,6 +1579,12 @@ app.addEventListener('click', (e) => {
 });
 app.addEventListener('input', (e) => {
   const t = e.target;
+  if (t.dataset.act === 'rate') {
+    S.prefs.rate = +t.value;
+    store.set('prefs', S.prefs);
+    t.closest('.row').querySelector('.hint').textContent = S.prefs.rate.toFixed(1) + '×';
+    return;
+  }
   if (t.dataset.act === 'size') {
     S.prefs.size = +t.value;
     savePrefs();
@@ -1210,7 +1593,10 @@ app.addEventListener('input', (e) => {
 });
 app.addEventListener('change', (e) => {
   const t = e.target;
-  if (t.dataset.act === 'fun' || t.dataset.act === 'promo') {
+  if (t.dataset.act === 'voice') {
+    S.prefs.voice = t.value;
+    store.set('prefs', S.prefs);
+  } else if (t.dataset.act === 'fun' || t.dataset.act === 'promo') {
     S.prefs[t.dataset.act] = t.checked;
     savePrefs();
   } else if (t.dataset.act === 'threads') {
@@ -1374,6 +1760,8 @@ const inAppHint = () =>
     : '';
 
 /* ---------- boot ---------- */
+// Existing users (they have settings) come from 1.9 and get the "what's new" note once; new users don't.
+if (!store.get('seenVersion')) store.set('seenVersion', store.get('prefs') ? '1.9' : APP_VERSION);
 applyPrefs();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 if (!('DecompressionStream' in window) || !crypto.subtle) {

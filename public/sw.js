@@ -1,7 +1,7 @@
 // Offline support. App shell: stale-while-revalidate. Index: network first. Articles: cache first.
-const SHELL = 'vesti-shell-v11';
+const SHELL = 'vesti-shell-v12';
 const DATA = 'vesti-data-v1';
-const SHELL_FILES = ['./', 'index.html', 'app.js', 'styles.css', 'manifest.webmanifest', 'icon.svg', 'logo.svg', 'icon-192.png', 'fonts/inter-400.woff', 'fonts/inter-500.woff', 'fonts/inter-600.woff', 'fonts/inter-display-700.woff'];
+const SHELL_FILES = ['./', 'index.html', 'app.js', 'styles.css', 'manifest.webmanifest', 'icon.svg', 'logo.svg', 'changelog.json', 'icon-192.png', 'fonts/inter-400.woff', 'fonts/inter-500.woff', 'fonts/inter-600.woff', 'fonts/inter-display-700.woff'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(SHELL).then((c) => c.addAll(SHELL_FILES)).then(() => self.skipWaiting()));
