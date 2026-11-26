@@ -89,5 +89,10 @@
       "match": "(^|/)(srbija|drustvo|beograd|novi-sad|nis|kragujevac|gradovi|lokal|dogadjaji|vesti|info|obrazovanje|vojvodina|prenosimo|vijesti|novosti|najnovije)(/|$)",
       "weak": true
     }
-  ]
+  ],
+  "threads": {
+    "threshold": 0.15,
+    "windowHours": 72,
+    "maxSize": 8
+  }
 }

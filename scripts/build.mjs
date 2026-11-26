@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { loadSource } from './lib/feeds.mjs';
 import { clusterItems } from './lib/cluster.mjs';
+import { threadClusters } from './lib/threads.mjs';
 import { deriveKey, encryptJson, randomSalt, ITERATIONS } from './lib/crypto.mjs';
 import { truncate, fold } from './lib/text.mjs';
 import { findProblems, syncIssues } from './lib/health.mjs';
@@ -266,6 +267,16 @@ for (const [id, l] of Object.entries(catLog)) {
 
 const all = Object.values(state.items).map((it) => ({ ...it, time: itemTime(it) }));
 const clusters = clusterItems(all, config.cluster || {}).sort((a, b) => b.last - a.last);
+// Developing stories: link same-story clusters over a few days into threads.
+const itemMap = new Map(all.map((it) => [it.id, it]));
+const { threadOf, threads } = threadClusters(itemMap, clusters, config.threads || {});
+{
+  const repTitle = (cid) => itemMap.get(clusters.find((c) => c.id === cid).rep).title.slice(0, 80);
+  log(`threads: ${threads.size} developing stories linking ${[...threads.values()].reduce((n, t) => n + t.length, 0)} clusters`);
+  for (const ids of [...threads.values()].sort((a, b) => b.length - a.length).slice(0, 12)) {
+    log(`  ${ids.length}× ${ids.map(repTitle).join('  →  ')}`.slice(0, 400));
+  }
+}
 log(`clusters: ${clusters.length} from ${all.length} items (${clusters.filter((c) => c.sources > 1).length} multi-source)`);
 
 // ---------- 5. write site ----------
@@ -299,7 +310,7 @@ const index = {
       x: it.x ? 1 : 0, w: it.words || 0,
     }]),
   ),
-  clusters: clusters.map((c) => ({ id: c.id, r: c.rep, it: c.items, n: c.sources, f: c.first, l: c.last })),
+  clusters: clusters.map((c) => ({ id: c.id, r: c.rep, it: c.items, n: c.sources, f: c.first, l: c.last, ...(threadOf.has(c.id) ? { th: threadOf.get(c.id) } : {}) })),
 };
 await writeFile(path.join(DIST, 'data', 'index.bin'), await encryptJson(cryptoKey, index));
 

@@ -38,8 +38,8 @@ jobs:
           key: news-state-${{ github.run_id }}
           restore-keys: news-state-
 
-      - name: Clustering test
-        run: node scripts/test-cluster.mjs
+      - name: Clustering tests
+        run: node scripts/test-cluster.mjs && node scripts/test-threads.mjs
 
       - name: Fetch, extract, cluster, encrypt
         env:
