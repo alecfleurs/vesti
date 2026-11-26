@@ -135,7 +135,16 @@ await Promise.all(
 const active = new Set(sources.map((s) => s.id));
 let pruned = 0;
 for (const [id, it] of Object.entries(state.items)) {
-  if (!active.has(it.source) || itemTime(it) < now - config.retainHours * 3600e3) {
+  const src = sources.find((x) => x.id === it.source);
+  const path = (() => {
+    try {
+      return new URL(it.url).pathname;
+    } catch {
+      return '';
+    }
+  })();
+  const excluded = src && (src.exclude.some((r) => r.test(it.url)) || globalExclude.some((r) => r.test(path)));
+  if (!active.has(it.source) || excluded || itemTime(it) < now - config.retainHours * 3600e3) {
     delete state.items[id];
     await rm(path.join(ART, `${id}.json`), { force: true });
     pruned++;

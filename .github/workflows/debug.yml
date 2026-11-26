@@ -22,4 +22,6 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund --omit=dev
-      - run: node scripts/debug-extract.mjs "${{ inputs.per_source }}" "${{ inputs.source }}"
+      - env:
+          HINTS: '1'
+        run: node scripts/debug-extract.mjs "${{ inputs.per_source }}" "${{ inputs.source }}"

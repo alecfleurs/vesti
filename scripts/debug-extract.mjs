@@ -3,6 +3,27 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { loadSource } from './lib/feeds.mjs';
 import { extractArticle } from './lib/extract.mjs';
+import { fetchText } from './lib/feeds.mjs';
+import { JSDOM } from 'jsdom';
+
+// Prints the page's section hints: meta tags, breadcrumbs and elements named like sections.
+async function sectionHints(url) {
+  const { text } = await fetchText(url);
+  const doc = new JSDOM(text).window.document;
+  const out = [];
+  for (const m of doc.querySelectorAll('meta[property^="article:"], meta[name*="section" i], meta[name*="categ" i], meta[name="keywords"]')) {
+    out.push(`meta ${m.getAttribute('property') || m.getAttribute('name')}=${(m.getAttribute('content') || '').slice(0, 60)}`);
+  }
+  for (const el of [...doc.querySelectorAll('[class*="rubri" i], [class*="kategor" i], [class*="categ" i], [class*="section" i], [class*="crumb" i], [class*="kicker" i], [class*="supertitle" i]')].slice(0, 8)) {
+    const t = el.textContent.replace(/\s+/g, ' ').trim().slice(0, 60);
+    if (t) out.push(`<${el.tagName.toLowerCase()} class="${String(el.className).slice(0, 50)}"> ${t}`);
+  }
+  for (const s of doc.querySelectorAll('script[type="application/ld+json"]')) {
+    const m = /"articleSection"\s*:\s*("[^"]*"|\[[^\]]*\])/.exec(s.textContent);
+    if (m) out.push('ld+json articleSection=' + m[1].slice(0, 60));
+  }
+  return out;
+}
 
 const per = Number(process.argv[2] || 2);
 const only = process.argv[3];
@@ -20,6 +41,8 @@ for (const f of (await readdir('sources')).filter((f) => f.endsWith('.json'))) {
         .replace(/<\/(p|h\d|li|blockquote|figcaption)>/g, '\n')
         .replace(/<(h\d)>/g, '\n## ').replace(/<li>/g, ' - ').replace(/<a [^>]*>/g, '[').replace(/<\/a>/g, ']')
         .replace(/<[^>]+>/g, '').replace(/\n{2,}/g, '\n').trim();
+      if (process.env.HINTS) for (const h of await sectionHints(it.url)) console.log('    hint ' + h);
+      console.log(`    section=${a.section || '-'}`);
       console.log(`    words=${a.words} feedImg=${(it.image || '').split('/').pop().slice(0, 40)} ogImg=${a.image.split('/').pop().slice(0, 40)}`);
       console.log(outline.split('\n').map((l) => '  | ' + l.slice(0, 150)).join('\n'));
     } catch (e) {
