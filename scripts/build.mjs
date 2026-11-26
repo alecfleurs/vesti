@@ -179,6 +179,7 @@ if (extractArticle) {
   for (const it of due) bySource.set(it.source, [...(bySource.get(it.source) || []), it]);
   let ok = 0;
   let bad = 0;
+  const failures = {};
   await Promise.all(
     [...bySource.values()].map(async (list) => {
       for (const it of list) {
@@ -199,12 +200,16 @@ if (extractArticle) {
         } catch (e) {
           it.fail = (it.fail || 0) + 1;
           it.err = String(e.message).slice(0, 120);
+          const k = `${it.source}: ${it.err.replace(/\d{3,}/g, 'N').slice(0, 60)}`;
+          failures[k] = (failures[k] || 0) + 1;
           bad++;
         }
+        await new Promise((r) => setTimeout(r, config.politeDelayMs ?? 400)); // be gentle with each site
       }
     }),
   );
   log(`extracted ${ok}, failed ${bad}, queued ${due.length}`);
+  for (const [k, n] of Object.entries(failures).sort((a, b) => b[1] - a[1]).slice(0, 8)) log(`    fail x${n} ${k}`);
 }
 
 // ---------- 4. categorize + cluster ----------
