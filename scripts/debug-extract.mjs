@@ -25,6 +25,14 @@ async function sectionHints(url) {
   return out;
 }
 
+// LINKS_URL=<page>: list feed-like links on a page and stop.
+if (process.env.LINKS_URL) {
+  const { text, url } = await fetchText(process.env.LINKS_URL);
+  for (const m of text.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+    if (/rss|feed|xml/i.test(m[1])) console.log(new URL(m[1], url).href, '|', m[2].replace(/<[^>]+>/g, '').trim().slice(0, 40));
+  }
+  process.exit(0);
+}
 const per = Number(process.argv[2] || 2);
 const only = process.argv[3];
 for (const f of (await readdir('sources')).filter((f) => f.endsWith('.json'))) {

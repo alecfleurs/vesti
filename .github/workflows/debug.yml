@@ -9,6 +9,9 @@ on:
       source:
         description: Only this source id (optional)
         default: ''
+      links_url:
+        description: List feed links on this page instead (optional)
+        default: ''
 
 permissions:
   contents: read
@@ -24,4 +27,5 @@ jobs:
       - run: npm install --no-audit --no-fund --omit=dev
       - env:
           HINTS: '1'
+          LINKS_URL: ${{ inputs.links_url }}
         run: node scripts/debug-extract.mjs "${{ inputs.per_source }}" "${{ inputs.source }}"
