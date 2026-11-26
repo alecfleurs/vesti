@@ -43,10 +43,15 @@ function categorize(it, src) {
     weak = r.name;
     break;
   }
+  let weakTag = null;
   for (const c of [it.section, ...(it.cats || [])].filter(Boolean)) {
-    for (const r of catRules) if (r.re.test(slug(c)) && !r.weak) return r.name;
+    for (const r of catRules) {
+      if (!r.re.test(slug(c))) continue;
+      if (!r.weak) return r.name;
+      weakTag ||= r.name;
+    }
   }
-  return src?.category || weak || 'Ostalo';
+  return src?.category || weak || weakTag || 'Ostalo';
 }
 
 // ---------- sources ----------
@@ -97,7 +102,9 @@ await Promise.all(
     const res = await loadSource(src, log);
     let added = 0;
     let kept = 0;
-    for (const raw of res.items.slice(0, maxPerSource)) {
+    // Newest first across all of the source's feeds, then cap.
+    const fresh = [...res.items].sort((a, b) => (b.time || 0) - (a.time || 0));
+    for (const raw of fresh.slice(0, src.maxItems || maxPerSource)) {
       let url;
       try {
         url = canonical(raw.url);

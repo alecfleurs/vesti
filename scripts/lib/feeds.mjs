@@ -184,15 +184,16 @@ export async function loadSource(src, log = () => {}) {
     }
   }
 
-  // 1. Configured feeds (merged).
-  const configured = src.feeds || [];
+  // 1. Configured feeds (merged). A feed may be "url" or { "url": ..., "category": ... }.
+  const configured = (src.feeds || []).map((f) => (typeof f === 'string' ? { url: f } : f));
   let all = [];
   const used = [];
   for (const f of configured) {
-    const items = await tryFeed(f);
+    const items = await tryFeed(f.url);
     if (items) {
+      if (f.category) for (const it of items) it.cats = [f.category, ...(it.cats || [])];
       all = all.concat(items);
-      used.push(f);
+      used.push(f.url);
     }
   }
   if (all.length) return { items: all, mode: 'rss', feeds: used };

@@ -1,6 +1,61 @@
 {
   "name": "Politika",
   "home": "https://www.politika.rs/",
-  "feeds": ["https://www.politika.rs/rss/"],
+  "feeds": [
+    {
+      "url": "https://www.politika.rs/scc/columns/rss/9",
+      "category": "Srbija"
+    },
+    {
+      "url": "https://www.politika.rs/scc/columns/rss/2",
+      "category": "Politika"
+    },
+    {
+      "url": "https://www.politika.rs/scc/columns/rss/1",
+      "category": "Svet"
+    },
+    {
+      "url": "https://www.politika.rs/scc/columns/rss/29",
+      "category": "Region"
+    },
+    {
+      "url": "https://www.politika.rs/scc/columns/rss/6",
+      "category": "Ekonomija"
+    },
+    {
+      "url": "https://www.politika.rs/scc/columns/rss/5",
+      "category": "Hronika"
+    },
+    {
+      "url": "https://www.politika.rs/scc/columns/rss/3",
+      "category": "Srbija"
+    },
+    {
+      "url": "https://www.politika.rs/scc/columns/rss/10",
+      "category": "Srbija"
+    },
+    {
+      "url": "https://www.politika.rs/scc/columns/rss/7",
+      "category": "Kultura"
+    },
+    {
+      "url": "https://www.politika.rs/scc/columns/rss/8",
+      "category": "Sport"
+    },
+    {
+      "url": "https://www.politika.rs/scc/columns/rss/4",
+      "category": "Mišljenja"
+    },
+    {
+      "url": "https://www.politika.rs/scc/columns/rss/856",
+      "category": "Mišljenja"
+    },
+    {
+      "url": "https://www.politika.rs/scc/columns/rss/1079",
+      "category": "Magazin"
+    },
+    "https://www.politika.rs/rss/"
+  ],
+  "maxItems": 160,
   "color": "#37474f"
 }
