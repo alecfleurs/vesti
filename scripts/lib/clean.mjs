@@ -5,14 +5,17 @@ import { fold } from './text.mjs';
 
 // Class/id tokens of ad slots and "more news" widgets.
 const AD_TOKEN = /(^|[-_])(ad|ads|adv|advert|advertisement|adsense|adslot|adunit|banner|billboard|oglas|oglasi|reklama|reklame|promo|sponsor|sponsored|dfp|gpt|taboola|outbrain|midas|teads|nativ|native-ad)([-_]|$|\d)/i;
-const WIDGET_TOKEN = /(^|[-_])(related|recommended|recommendations?|preporuka|preporuceno|read-?more|more-?news|more-?articles|similar|also-?read|procitajte|povezane|newsletter|share|sharing|social|socials|tags?|comments?|breadcrumbs?|author-?box|most-?read|najcitanije|latest|najnovije|widget|sidebar|teaser-?list|card-?list)([-_]|$)/i;
+const WIDGET_TOKEN = /(^|[-_])(related|recommended|recommendations?|preporuka|preporuceno|read-?more|more-?news|more-?articles|similar|also-?read|procitajte|povezane|newsletter|share|sharing|social|socials|tags?|comments?|breadcrumbs?|author-?box|most-?read|najcitanije|latest|najnovije|widget|sidebar|teaser-?list|card-?list|twitter-tweet|instagram-media|tiktok-embed|fb-post|embed-social|author|avatar|byline|post-meta|article-meta|entry-meta|meta-info|dateline|published|publish-date|telegram|viber|whatsapp|follow)([-_]|$)/i;
 
 // Headings that introduce a block of links to other articles (folded: no diacritics, Latin).
 export const RELATED_HEAD = /^(mozda vas (zanima|interesuje)|procitajte (jos|i|takodje|vise)|takodje procitajte|povezane (vesti|teme)|vezane vesti|slicne vesti|najcitanije|najnovije( vesti)?|preporucujemo|preporuka|ne propustite|pogledajte (jos|i)|vise (vesti )?iz rubrike|izdvajamo|iz rubrike|tagovi|teme|komentari|podeli( vest)?|jos vesti|ostale vesti|vesti dana|iz minuta u minut|pratite nas|zapratite nas|vazno)\s*[:.!]?$/;
 
 const AD_LABEL = /^(oglas|oglasi|reklama|advertisement|advertising|ad|sponzorisano|sponzorisan sadrzaj|promo|promocija|pr tekst|marketing|placeni sadrzaj)$/;
 const DATE_ONLY = /^(\d{1,2}[:.]\d{2}h?|\d{1,2}\.\s?\d{1,2}\.\s?(\d{2,4}\.?)?|\d+\s?(d|h|min|s|dan|dana|sat|sati|sata|minuta)|pre \d+ ?\w*|juce|danas|upravo|\d+ komentar\w*)$/;
-const JUNK_LINE = /^(procitajte (jos|i)|pogledajte (jos|i)|foto:?|video:?|izvor:?|podeli|share|preuzmite aplikaciju|pratite nas|zapratite nas|prijavite se na newsletter|skini aplikaciju)\b/;
+const JUNK_LINE = /^(procitajte (jos|i)|pogledajte (jos|i)|opsirnije (procitajte|na|u)|vise informacija na|bonus video|foto:?|video:?|izvor:?|autor:?|podeli|share|preuzmite aplikaciju|pratite nas|zapratite nas|prijavite se na newsletter|skini aplikaciju|\+\d+ galerija|galerija)\b/;
+const JUNK_TEXT = /^(\+\d+|galerija|bonus video:?|autor:?|foto:?|video:?|izvor:?|oglas|reklama)$/;
+const HAS_DATE = /\d{1,2}\.\s?\d{1,2}\.\s?\d{4}|\d{1,2}\.\s?(jan|feb|mar|apr|maj|jun|jul|avg|sep|okt|nov|dec)[a-z]*\.?\s\d{4}/;
+const BAD_IMG = /avatar|author|autor|logo|icon|telegram|viber|whatsapp|banner|promo|placeholder|sprite|emoji|badge|default-|pixel|spacer/i;
 
 const norm = (s) => fold(s || '').replace(/\s+/g, ' ').trim();
 
@@ -89,9 +92,9 @@ function isLinkOnly(el) {
 function imageKey(src) {
   try {
     const u = new URL(src);
-    const file = u.pathname.split('/').pop() || '';
+    const file = (u.pathname.split('/').pop() || '').split('.')[0];
     return file
-      .replace(/\.(jpe?g|png|webp|avif|gif)$/i, '')
+      .replace(/^\d{2,4}z\d{2,4}_(cb_)?/i, '')
       .replace(/[-_](\d{2,4}x\d{2,4}|scaled|thumb|large|medium|small|w\d+|h\d+)$/i, '')
       .replace(/[-_]\d{2,4}x\d{2,4}/i, '')
       .toLowerCase();
@@ -105,6 +108,27 @@ const BLOCK = new Set(['P', 'H2', 'H3', 'H4', 'UL', 'OL', 'BLOCKQUOTE', 'FIGURE'
 
 /** Tidy an already-sanitized article body (whitelisted tags only). Mutates root. */
 export function postClean(root, doc) {
+  // Teaser cards: links wrapping headings, paragraphs or images point to other articles.
+  for (const a of [...root.querySelectorAll('a')]) {
+    if (!root.contains(a)) continue;
+    if (a.querySelector('h1, h2, h3, h4, p, figure, ul, ol, blockquote')) a.remove();
+    else if (a.querySelector('img')) {
+      if (/\.(jpe?g|png|webp|avif|gif)(\?|$)/i.test(a.getAttribute('href') || '')) a.replaceWith(...a.childNodes);
+      else a.remove();
+    }
+  }
+  for (const img of [...root.querySelectorAll('img')]) {
+    if (BAD_IMG.test(img.getAttribute('src') || '')) (img.closest('figure') || img).remove();
+  }
+  // Stray label text ("+4", "Galerija", "autor:") left next to images.
+  const walker = doc.createTreeWalker(root, 4);
+  const dead = [];
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (JUNK_TEXT.test(norm(n.nodeValue))) dead.push(n);
+    else if (/\+\d+\s*galerija/i.test(n.nodeValue)) n.nodeValue = n.nodeValue.replace(/\+\d+\s*galerija\s*/gi, '');
+  }
+  for (const n of dead) n.remove();
+
   // Wrap stray top-level inline content (left over from unwrapped divs) in <p>.
   let run = [];
   const flush = (before) => {
@@ -134,7 +158,7 @@ export function postClean(root, doc) {
       continue;
     }
     if (hasImg) continue;
-    if (AD_LABEL.test(t) || DATE_ONLY.test(t)) el.remove();
+    if (AD_LABEL.test(t) || DATE_ONLY.test(t) || (t.length < 60 && HAS_DATE.test(t))) el.remove();
     else if (t.length < 60 && RELATED_HEAD.test(t)) {
       let next = el.nextElementSibling;
       el.remove();
@@ -159,6 +183,18 @@ export function postClean(root, doc) {
     else seen.add(k);
   }
   for (const f of [...root.querySelectorAll('figure')]) if (!f.querySelector('img') && !f.textContent.trim()) f.remove();
+  // Trailing furniture: after the last real paragraph, drop picture strips, captions and short labels.
+  const blocks = [...root.children];
+  let last = -1;
+  blocks.forEach((b, i) => {
+    if (b.textContent.trim().length > 80) last = i;
+  });
+  if (last >= 0) {
+    for (const b of blocks.slice(last + 1)) {
+      const t = b.textContent.trim();
+      if (b.querySelector('img') || (t.length < 60 && !/[.!?…"“”»]$/.test(t))) b.remove();
+    }
+  }
   // Leading/trailing horizontal rules.
   while (root.firstElementChild?.tagName === 'HR') root.firstElementChild.remove();
   while (root.lastElementChild?.tagName === 'HR') root.lastElementChild.remove();

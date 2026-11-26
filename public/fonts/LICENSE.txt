@@ -1,0 +1,3 @@
+Inter and Inter Display by Rasmus Andersson (https://rsms.me/inter/)
+Licensed under the SIL Open Font License, Version 1.1 (https://openfontlicense.org).
+The files here are subsets (Latin, Latin Extended-A, Cyrillic) converted to WOFF.

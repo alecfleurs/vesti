@@ -87,9 +87,10 @@ function applyPrefs() {
   const dark = S.prefs.theme === 'dark' || (S.prefs.theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   document.documentElement.style.setProperty('--size', S.prefs.size + 'px');
+  document.documentElement.dataset.readfont = S.prefs.readfont === 'serif' ? 'serif' : 'sans';
   const tc = $('meta[name="theme-color"]');
   document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.removeAttribute('media'));
-  if (tc) tc.content = dark ? '#151515' : '#f7f5f0';
+  if (tc) tc.content = dark ? '#0d0d0f' : '#f4f4f2';
 }
 function savePrefs() {
   store.set('prefs', S.prefs);
@@ -228,45 +229,67 @@ function bar(left, right = '') {
   return `<header class="bar"><div class="bar-in">${left}${right}</div></header>`;
 }
 
+const imgKey = (src) => {
+  try {
+    return new URL(src, location.href).pathname.split('/').pop().split('.')[0]
+      .replace(/^\d{2,4}z\d{2,4}_(cb_)?/i, '')
+      .replace(/[-_](\d{2,4}x\d{2,4}|scaled|thumb|large|medium|small|w\d+|h\d+)$/i, '')
+      .replace(/[-_]\d{2,4}x\d{2,4}/i, '')
+      .toLowerCase();
+  } catch {
+    return src;
+  }
+};
+const imgTag = (src, cls) =>
+  src ? `<img class="${cls}" src="${esc(src)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()">` : '';
+
+function sourceBadge(c, src) {
+  const others = c.srcs.length - 1;
+  if (others <= 0) return `<span class="src" style="--c:${esc(src.color)}">${esc(src.name)}</span>`;
+  const dots = c.srcs.slice(0, 4).map((id) => `<i style="--c:${esc(srcById(id).color || 'var(--faint)')}"></i>`).join('');
+  return `<span class="src" style="--c:${esc(src.color)}">${esc(src.name)}</span>
+    <span class="stack"><span class="dots">${dots}</span>${c.srcs.length} izvora</span>`;
+}
+
 function renderList() {
   const idx = S.index;
   const list = ranked();
   const shown = list.slice(0, S.limit);
   const unread = list.filter(isUnread).length;
+  const thumbs = S.prefs.thumbs !== false;
   const cards = shown
-    .map((c) => {
+    .map((c, i) => {
       const it = idx.items[c.rep];
       const src = srcById(it.s);
-      const others = c.srcs.length - 1;
       const un = isUnread(c);
       const fresh = S.read[c.id] && un;
-      return `<li class="card${un ? '' : ' read'}"><a href="#/a/${c.rep}/${c.id}">
-        <div class="meta">${fresh ? '<span class="dot-new" title="Novi izvori"></span>' : ''}
-          <span class="src" style="--c:${esc(src.color)}">${esc(src.name)}</span>
-          ${others > 0 ? `<span class="multi">+${others} ${others === 1 ? 'izvor' : 'izvora'}</span>` : ''}
-          <span>${ago(c.l)}</span></div>
-        <h2>${esc(lat(it.t))}</h2>
-        ${it.l ? `<p class="lead">${esc(lat(it.l))}</p>` : ''}
-      </a></li>`;
+      const img = it.i || c.items.map((id) => idx.items[id].i).find(Boolean) || '';
+      const lead = i === 0 && S.tab === 'top' && thumbs && img && un;
+      const meta = `<div class="meta">${fresh ? '<span class="dot-new" title="Novi izvori"></span>' : ''}${sourceBadge(c, src)}<span>${ago(c.l)}</span></div>`;
+      const txt = `<div class="txt">${meta}<h2>${esc(lat(it.t))}</h2>${it.l ? `<p class="lead">${esc(lat(it.l))}</p>` : ''}</div>`;
+      return lead
+        ? `<li class="card lead-story"><a href="#/a/${c.rep}/${c.id}">${imgTag(img, 'hero-img')}${txt}</a></li>`
+        : `<li class="card${un ? '' : ' read'}"><a href="#/a/${c.rep}/${c.id}">${txt}${thumbs ? imgTag(img, 'thumb') : ''}</a></li>`;
     })
     .join('');
+  const today = new Date().toLocaleDateString('sr-Latn-RS', { weekday: 'long', day: 'numeric', month: 'long' });
 
-  app.innerHTML =
-    bar(
-      `<div class="title-col"><h1>${esc(idx.title || 'Vesti')}</h1><span class="sub">ažurirano ${ago(idx.generated)} · ${unread} nepročitanih</span></div>`,
-      `<button class="icon-btn" data-act="refresh" aria-label="Osveži">${I.refresh}</button>
-       <a class="icon-btn" href="#/settings" aria-label="Podešavanja">${I.gear}</a>`,
-    ) +
-    `<main class="wrap">
-      <div class="tabs" role="tablist">
-        <button class="tab" role="tab" data-tab="top" aria-selected="${S.tab === 'top'}">Najvažnije</button>
-        <button class="tab" role="tab" data-tab="new" aria-selected="${S.tab === 'new'}">Najnovije</button>
-        <span class="spacer"></span>
-        <button class="link-btn" data-act="allread">Sve pročitano</button>
+  app.innerHTML = `<header class="home-head">
+      <div class="t"><div class="date">${esc(today.charAt(0).toUpperCase() + today.slice(1))}</div>
+        <h1>${esc(idx.title || 'Vesti')}</h1>
+        <div class="sub">Ažurirano ${ago(idx.generated)} · ${unread} nepročitanih</div></div>
+      <div class="actions"><button class="icon-btn" data-act="refresh" aria-label="Osveži">${I.refresh}</button>
+        <a class="icon-btn" href="#/settings" aria-label="Podešavanja">${I.gear}</a></div>
+    </header>
+    <main class="wrap">
+      <div class="seg-tabs" role="tablist">
+        <button role="tab" data-tab="top" aria-selected="${S.tab === 'top'}">Najvažnije</button>
+        <button role="tab" data-tab="new" aria-selected="${S.tab === 'new'}">Najnovije</button>
       </div>
+      <div class="list-tools"><span>${list.length} vesti</span><button class="link-btn" data-act="allread">Označi sve kao pročitano</button></div>
       ${shown.length ? `<ul class="list">${cards}</ul>` : '<p class="empty">Nema vesti za prikaz.</p>'}
       ${list.length > S.limit ? `<button class="more" data-act="more">Prikaži još (${list.length - S.limit})</button>` : ''}
-      <p class="foot">${list.length} vesti iz ${Object.keys(idx.items).length} članaka · ${idx.sources.length} izvora</p>
+      <p class="foot">${Object.keys(idx.items).length} članaka iz ${idx.sources.length} izvora, spojeno u ${idx.clusters.length} vesti</p>
     </main>`;
   requestAnimationFrame(() => window.scrollTo(0, S.listScroll));
 }
@@ -286,30 +309,30 @@ async function renderArticle(itemId, clusterId) {
   app.innerHTML =
     bar(
       `<a class="icon-btn" href="#/" data-act="back" aria-label="Nazad">${I.back}</a>
-       <span class="crumb">${esc(src.name)}</span>`,
-      `<button class="icon-btn" data-act="smaller" aria-label="Manji tekst">${I.minus}</button>
-       <button class="icon-btn" data-act="bigger" aria-label="Veći tekst">${I.plus}</button>
-       <a class="txt-btn" href="${esc(it.u)}" target="_blank" rel="noopener noreferrer">Original ${I.ext}</a>`,
+       <span class="crumb"></span>`,
+      `<span class="size-ctl"><button data-act="smaller" aria-label="Manji tekst">A</button><button data-act="bigger" aria-label="Veći tekst">A</button></span>
+       <a class="pill-btn" href="${esc(it.u)}" target="_blank" rel="noopener noreferrer">Original ${I.ext}</a>`,
     ) +
     `<main class="wrap"><article class="reader">
       <div class="kicker"><span class="src" style="--c:${esc(src.color)}">${esc(src.name)}</span><span>${ago(it.p)}</span>
         ${it.w ? `<span>${Math.max(1, Math.round(it.w / 220))} min čitanja</span>` : ''}<span class="byline"></span></div>
       <h1>${esc(lat(it.t))}</h1>
       <div class="content">${it.x ? '<p class="notice">Učitavam…</p>' : ''}</div>
-      ${others.length ? `<section class="also"><h3>Ista vest, drugi izvori</h3>${others
+      ${others.length ? `<section class="also"><h3>Ista vest, drugi izvori</h3><ul class="list">${others
         .map((id) => {
           const o = idx.items[id];
           const os = srcById(o.s);
-          return `<a href="#/a/${id}/${cluster.id}"><div class="meta"><span class="src" style="--c:${esc(os.color)}">${esc(os.name)}</span><span>${ago(o.p)}</span></div><div class="t">${esc(lat(o.t))}</div></a>`;
+          return `<li class="card"><a href="#/a/${id}/${cluster.id}"><div class="txt"><div class="meta"><span class="src" style="--c:${esc(os.color)}">${esc(os.name)}</span><span>${ago(o.p)}</span></div><h2>${esc(lat(o.t))}</h2></div>${S.prefs.thumbs !== false ? imgTag(o.i, 'thumb') : ''}</a></li>`;
         })
-        .join('')}</section>` : ''}
+        .join('')}</ul></section>` : ''}
     </article></main>`;
   window.scrollTo(0, 0);
 
   const box = $('.content');
+  const heroTag = (src) => `<img class="hero" src="${esc(src)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">`;
   const fallback = (why) => {
-    box.innerHTML = `${it.i ? `<img class="hero" src="${esc(it.i)}" alt="" referrerpolicy="no-referrer" loading="lazy" onerror="this.remove()">` : ''}
-      ${it.l ? `<p class="body">${esc(lat(it.l))}</p>` : ''}
+    box.innerHTML = `${it.i ? heroTag(it.i) : ''}
+      ${it.l ? `<div class="body"><p>${esc(lat(it.l))}</p></div>` : ''}
       <p class="notice">${why}</p>
       <a class="cta" href="${esc(it.u)}" target="_blank" rel="noopener noreferrer">Otvori na sajtu ${I.ext}</a>`;
   };
@@ -322,17 +345,22 @@ async function renderArticle(itemId, clusterId) {
     body.innerHTML = a.html;
     for (const img of body.querySelectorAll('img')) {
       img.loading = 'lazy';
+      img.decoding = 'async';
       img.referrerPolicy = 'no-referrer';
-      img.onerror = () => img.remove();
+      img.onerror = () => (img.closest('figure') || img).remove();
     }
     for (const l of body.querySelectorAll('a')) {
       l.target = '_blank';
       l.rel = 'noopener noreferrer';
     }
     latinizeNode(body);
+    // Lead image: skip it when the article already opens with a picture or contains the same one.
     const hero = it.i || a.image;
-    const heroDup = hero && [...body.querySelectorAll('img')].some((im) => sameImage(im.src, hero));
-    box.innerHTML = hero && !heroDup ? `<img class="hero" src="${esc(hero)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">` : '';
+    const first = [...body.children].find((el) => el.textContent.trim() || el.querySelector('img') || el.tagName === 'IMG');
+    const opensWithImage = first && (first.tagName === 'IMG' || first.tagName === 'FIGURE' || (!first.textContent.trim() && first.querySelector('img')));
+    const contains = hero && [...body.querySelectorAll('img')].some((im) => imgKey(im.getAttribute('src')) === imgKey(hero));
+    box.innerHTML = hero && !opensWithImage && !contains ? heroTag(hero) : '';
+    if (opensWithImage) first.classList.add('first-media');
     box.appendChild(body);
     box.insertAdjacentHTML('beforeend', `<a class="cta" href="${esc(it.u)}" target="_blank" rel="noopener noreferrer">Otvori original na ${esc(src.name)} ${I.ext}</a>`);
     if (a.byline) $('.byline').textContent = lat(a.byline);
@@ -340,10 +368,6 @@ async function renderArticle(itemId, clusterId) {
     fallback(navigator.onLine ? 'Članak nije moguće učitati.' : 'Niste na mreži, a ovaj članak nije sačuvan.');
   }
 }
-const sameImage = (a, b) => {
-  const k = (u) => u.split('?')[0].replace(/-\d+x\d+(?=\.\w+$)/, '').split('/').pop();
-  return k(a) === k(b);
-};
 
 function renderSettings() {
   const idx = S.index;
@@ -358,17 +382,23 @@ function renderSettings() {
     `<div class="seg">${opts.map(([v, l]) => `<button data-pref="${name}" data-val="${v}" aria-pressed="${val === v}">${l}</button>`).join('')}</div>`;
 
   app.innerHTML =
-    bar(`<a class="icon-btn" href="#/" aria-label="Nazad">${I.back}</a><span class="crumb">Podešavanja</span>`) +
+    bar(`<a class="icon-btn" href="#/" aria-label="Nazad">${I.back}</a><span class="crumb"></span>`) +
     `<main class="wrap">
-      <section class="panel"><h2>Izgled</h2>
+      <h1 class="page-title">Podešavanja</h1>
+      <div class="panel-label">Izgled</div>
+      <section class="panel">
         <div class="row"><div class="grow">Tema</div>${seg('theme', S.prefs.theme, [['auto', 'Auto'], ['light', 'Svetla'], ['dark', 'Tamna']])}</div>
+        <div class="row"><div class="grow">Font za čitanje</div>${seg('readfont', S.prefs.readfont || 'sans', [['sans', 'Moderan'], ['serif', 'Klasičan']])}</div>
         <div class="row"><div class="grow">Veličina teksta<div class="hint">${S.prefs.size}px</div></div>
           <input type="range" min="15" max="24" step="1" value="${S.prefs.size}" data-act="size"></div>
+        <div class="row"><div class="grow">Slike u listi<div class="hint">Isključi za manju potrošnju podataka</div></div>
+          <input type="checkbox" class="switch" data-act="thumbs" ${S.prefs.thumbs !== false ? 'checked' : ''}></div>
         <div class="row"><div class="grow">Sve latinicom<div class="hint">Ćirilične naslove i tekstove prikazuje latinicom</div></div>
           <input type="checkbox" class="switch" data-act="latin" ${S.prefs.latin ? 'checked' : ''}></div>
       </section>
 
-      <section class="panel"><h2>Izvori</h2>
+      <div class="panel-label">Izvori</div>
+      <section class="panel">
         ${idx.sources.map((s) => {
           const [cls, txt] = statusOf(s);
           return `<div class="row"><span class="status ${cls}"></span>
@@ -378,20 +408,22 @@ function renderSettings() {
         <div class="row"><div class="grow hint">Isključeni izvori se skrivaju samo na ovom uređaju.</div></div>
       </section>
 
-      <section class="panel"><h2>Dodaj izvor</h2>
+      <div class="panel-label">Dodaj izvor</div>
+      <section class="panel">
         <label class="field"><span>Naziv</span><input id="ns-name" placeholder="npr. RTS" autocomplete="off"></label>
         <label class="field"><span>Adresa sajta</span><input id="ns-home" type="url" inputmode="url" placeholder="https://www.rts.rs/" autocomplete="off"></label>
         <label class="field"><span>RSS adresa (nije obavezno)</span><input id="ns-feed" type="url" inputmode="url" placeholder="Pronalazi se automatski" autocomplete="off"></label>
         <a class="primary" id="ns-go" target="_blank" rel="noopener" aria-disabled="true" href="#">Dodaj preko GitHuba</a>
-        <p class="hint" style="margin:0 0 14px">${repo
-          ? 'Otvara GitHub sa pripremljenim fajlom. Potvrdi sa <b>Commit changes</b>. Izvor se pojavljuje posle sledećeg ažuriranja.'
+        <p class="row hint" style="border:0;min-height:0;padding:0 0 14px">${repo
+          ? 'Otvara GitHub sa pripremljenim fajlom. Potvrdi sa Commit changes. Izvor se pojavljuje posle sledećeg ažuriranja.'
           : 'Dostupno kada aplikacija radi sa GitHub Pages.'}</p>
       </section>
 
-      <section class="panel"><h2>Održavanje</h2>
+      <div class="panel-label">Održavanje</div>
+      <section class="panel">
         ${repo ? `<a class="row" href="https://github.com/${esc(repo)}/tree/main/sources" target="_blank" rel="noopener"><div class="grow">Uredi ili ukloni izvore<div class="hint">Fajlovi u folderu sources na GitHubu</div></div>${I.ext}</a>
         <a class="row" href="https://github.com/${esc(repo)}/actions/workflows/update.yml" target="_blank" rel="noopener"><div class="grow">Ažuriraj odmah<div class="hint">Run workflow na GitHub Actions</div></div>${I.ext}</a>` : ''}
-        <button class="row" style="width:100%;border-left:0;border-right:0;border-bottom:0;background:none;text-align:left;cursor:pointer" data-act="logout"><div class="grow">Zaboravi lozinku na ovom uređaju</div></button>
+        <button class="row" data-act="logout"><div class="grow">Zaboravi lozinku na ovom uređaju</div></button>
       </section>
       <p class="foot">Poslednje ažuriranje: ${new Date(idx.generated).toLocaleString('sr-Latn-RS')}</p>
     </main>`;
@@ -500,7 +532,10 @@ app.addEventListener('input', (e) => {
 });
 app.addEventListener('change', (e) => {
   const t = e.target;
-  if (t.dataset.act === 'latin') {
+  if (t.dataset.act === 'thumbs') {
+    S.prefs.thumbs = t.checked;
+    savePrefs();
+  } else if (t.dataset.act === 'latin') {
     S.prefs.latin = t.checked;
     savePrefs();
   } else if (t.dataset.src) {
@@ -509,6 +544,19 @@ app.addEventListener('change', (e) => {
     store.set('hidden', [...S.hidden]);
   }
 });
+
+// Sticky bar: hairline once scrolled; in the reader, show the headline in the bar after it scrolls away.
+window.addEventListener('scroll', () => {
+  const bar = document.querySelector('.bar');
+  if (!bar) return;
+  bar.classList.toggle('scrolled', window.scrollY > 8);
+  const h1 = document.querySelector('.reader h1, .page-title');
+  const crumb = bar.querySelector('.crumb');
+  if (h1 && crumb) {
+    const past = h1.getBoundingClientRect().bottom < 60;
+    crumb.textContent = past ? h1.textContent : '';
+  }
+}, { passive: true });
 
 // Refresh when coming back to the app after a while.
 document.addEventListener('visibilitychange', () => {

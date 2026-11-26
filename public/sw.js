@@ -1,7 +1,7 @@
 // Offline support. App shell: stale-while-revalidate. Index: network first. Articles: cache first.
-const SHELL = 'vesti-shell-v1';
+const SHELL = 'vesti-shell-v2';
 const DATA = 'vesti-data-v1';
-const SHELL_FILES = ['./', 'index.html', 'app.js', 'styles.css', 'manifest.webmanifest', 'icon.svg', 'icon-192.png'];
+const SHELL_FILES = ['./', 'index.html', 'app.js', 'styles.css', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'fonts/inter-400.woff', 'fonts/inter-500.woff', 'fonts/inter-600.woff', 'fonts/inter-display-700.woff'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(SHELL).then((c) => c.addAll(SHELL_FILES)).then(() => self.skipWaiting()));
@@ -61,18 +61,18 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
+  // App shell: network first so a new deploy shows up on the next open; cache when offline.
   e.respondWith(
     (async () => {
       const cache = await caches.open(SHELL);
       const key = p.endsWith('/') ? './' : e.request;
-      const hit = await cache.match(key, { ignoreSearch: true });
-      const net = fetch(e.request)
-        .then((res) => {
-          if (res.ok) cache.put(key, res.clone());
-          return res;
-        })
-        .catch(() => null);
-      return hit || (await net) || Response.error();
+      try {
+        const res = await fetch(e.request, { cache: 'no-cache' });
+        if (res.ok) cache.put(key, res.clone());
+        return res;
+      } catch {
+        return (await cache.match(key, { ignoreSearch: true })) || Response.error();
+      }
     })(),
   );
 });
