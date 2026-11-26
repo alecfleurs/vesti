@@ -43,6 +43,7 @@ jobs:
       - name: Fetch, extract, cluster, encrypt
         env:
           NEWS_KEY: ${{ secrets.NEWS_KEY }}
+          DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
         run: node scripts/build.mjs
 
       - name: Save state

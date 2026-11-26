@@ -1,5 +1,5 @@
 // Offline support. App shell: stale-while-revalidate. Index: network first. Articles: cache first.
-const SHELL = 'vesti-shell-v6';
+const SHELL = 'vesti-shell-v7';
 const DATA = 'vesti-data-v1';
 const SHELL_FILES = ['./', 'index.html', 'app.js', 'styles.css', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'fonts/inter-400.woff', 'fonts/inter-500.woff', 'fonts/inter-600.woff', 'fonts/inter-display-700.woff'];
 

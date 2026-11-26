@@ -548,6 +548,66 @@ function renderUnlock(err = '') {
   $('#pass').focus();
 }
 
+/* ---------- refresh: ask GitHub for a fresh build ---------- */
+async function refreshNow() {
+  if (S.updating) return toast('Ažuriranje je već u toku…');
+  const idx = S.index;
+  const age = Date.now() - (idx?.generated || 0);
+  const last = store.get('lastDispatch', 0);
+  // Only start a build when the data is older than 5 min and this device hasn't asked in the last 10.
+  if (!idx?.dispatch || !idx.repo || age < 5 * 60e3 || Date.now() - last < 10 * 60e3) return load();
+  try {
+    const r = await fetch(`https://api.github.com/repos/${idx.repo}/actions/workflows/update.yml/dispatches`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${idx.dispatch}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ ref: 'main' }),
+    });
+    if (r.status === 401 || r.status === 403) {
+      toast('Token za ažuriranje je istekao. Prikazujem poslednje vesti.');
+      return load();
+    }
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+  } catch (e) {
+    return load(); // offline or GitHub unreachable: just reload what's published
+  }
+  store.set('lastDispatch', Date.now());
+  track('refresh-dispatch');
+  await waitForBuild(idx.generated);
+}
+
+async function waitForBuild(since) {
+  S.updating = true;
+  const btn = () => document.querySelector('[data-act="refresh"]');
+  btn()?.classList.add('spin');
+  const sub = document.querySelector('.home-head .sub');
+  if (sub) sub.textContent = 'Prikupljam najnovije vesti… (oko 2 min)';
+  toast('Prikupljam najnovije vesti, oko 2 minuta');
+  const started = Date.now();
+  try {
+    while (Date.now() - started < 6 * 60e3) {
+      await new Promise((r) => setTimeout(r, 15000));
+      try {
+        const m = await (await fetch('data/meta.json', { cache: 'no-store' })).json();
+        if (m.generated > since) {
+          S.updating = false;
+          await load();
+          return toast('Vesti su ažurirane');
+        }
+      } catch {}
+      btn()?.classList.add('spin'); // re-applied after re-renders
+    }
+    toast('Ažuriranje kasni. Proveri ponovo za par minuta.');
+  } finally {
+    S.updating = false;
+    btn()?.classList.remove('spin');
+  }
+}
+
 /* ---------- next / previous story ---------- */
 function goStory(dir) {
   const parts = (location.hash || '').slice(2).split('/');
@@ -648,7 +708,7 @@ app.addEventListener('click', (e) => {
   }
   switch (t.dataset.act) {
     case 'refresh':
-      return load();
+      return refreshNow();
     case 'more':
       S.limit += 60;
       S.listScroll = window.scrollY;

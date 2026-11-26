@@ -266,6 +266,8 @@ const index = {
   title: config.title || 'Vesti',
   repo: process.env.GITHUB_REPOSITORY || config.repo || '',
   categories: catRules.map((r) => r.name).concat('Ostalo'),
+  // Token that may only start update.yml; lives inside the encrypted index, so only password holders get it.
+  dispatch: process.env.DISPATCH_TOKEN || '',
   sources: sources.map((s) => ({
     id: s.id, name: s.name, home: s.home || '', color: s.color || '', ...state.sources[s.id],
   })),
