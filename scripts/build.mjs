@@ -143,14 +143,14 @@ const active = new Set(sources.map((s) => s.id));
 let pruned = 0;
 for (const [id, it] of Object.entries(state.items)) {
   const src = sources.find((x) => x.id === it.source);
-  const path = (() => {
+  const urlPath = (() => {
     try {
       return new URL(it.url).pathname;
     } catch {
       return '';
     }
   })();
-  const excluded = src && (src.exclude.some((r) => r.test(it.url)) || globalExclude.some((r) => r.test(path)));
+  const excluded = src && (src.exclude.some((r) => r.test(it.url)) || globalExclude.some((r) => r.test(urlPath)));
   if (!active.has(it.source) || excluded || itemTime(it) < now - config.retainHours * 3600e3) {
     delete state.items[id];
     await rm(path.join(ART, `${id}.json`), { force: true });
