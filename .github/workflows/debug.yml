@@ -28,4 +28,5 @@ jobs:
       - env:
           HINTS: '1'
           LINKS_URL: ${{ inputs.links_url }}
+          LINKS_RE: rss|feed|xml|rubrik
         run: node scripts/debug-extract.mjs "${{ inputs.per_source }}" "${{ inputs.source }}"
