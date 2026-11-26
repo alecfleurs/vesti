@@ -27,6 +27,7 @@ const S = {
   index: null,
   key: null,
   tab: store.get('tab', 'top'),
+  cat: store.get('cat', ''),
   hidden: new Set(store.get('hidden', [])),
   read: store.get('read', {}),
   prefs: Object.assign({ theme: 'auto', size: 18, latin: false }, store.get('prefs', {})),
@@ -202,13 +203,19 @@ function viewClusters() {
     if (!items.length) continue;
     const rep = items.includes(c.r) ? c.r : items[0];
     const srcs = [...new Set(items.map((id) => S.index.items[id].s))];
-    out.push({ ...c, items, rep, srcs });
+    const votes = {};
+    for (const id of items) {
+      const k = S.index.items[id].c || 'Ostalo';
+      if (k !== 'Ostalo') votes[k] = (votes[k] || 0) + (id === rep ? 1.5 : 1);
+    }
+    const cat = Object.entries(votes).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Ostalo';
+    out.push({ ...c, items, rep, srcs, cat });
   }
   return out;
 }
 
 function ranked() {
-  const list = viewClusters();
+  const list = viewClusters().filter((c) => !S.cat || c.cat === S.cat);
   if (S.tab === 'new') return list.sort((a, b) => b.l - a.l);
   const now = Date.now();
   return list
@@ -221,6 +228,9 @@ function ranked() {
     .sort((a, b) => b.score - a.score)
     .map((x) => x.c);
 }
+
+// Big image for heroes and lead cards; the feed image is often a small thumbnail.
+const bigImg = (it) => it.h || it.i || '';
 
 const isUnread = (c) => !S.read[c.id] || c.l > S.read[c.id] + 1000;
 
@@ -263,15 +273,22 @@ function renderList() {
       const src = srcById(it.s);
       const un = isUnread(c);
       const fresh = S.read[c.id] && un;
-      const img = it.i || c.items.map((id) => idx.items[id].i).find(Boolean) || '';
+      const img = bigImg(it) || c.items.map((id) => bigImg(idx.items[id])).find(Boolean) || '';
       const lead = i === 0 && S.tab === 'top' && thumbs && img && un;
       const meta = `<div class="meta">${fresh ? '<span class="dot-new" title="Novi izvori"></span>' : ''}${sourceBadge(c, src)}<span>${ago(c.l)}</span></div>`;
       const txt = `<div class="txt">${meta}<h2>${esc(lat(it.t))}</h2>${it.l ? `<p class="lead">${esc(lat(it.l))}</p>` : ''}</div>`;
       return lead
-        ? `<li class="card lead-story"><a href="#/a/${c.rep}/${c.id}">${imgTag(img, 'hero-img')}${txt}</a></li>`
-        : `<li class="card${un ? '' : ' read'}"><a href="#/a/${c.rep}/${c.id}">${txt}${thumbs ? imgTag(img, 'thumb') : ''}</a></li>`;
+        ? `<li class="card lead-story" data-id="${c.id}"><a href="#/a/${c.rep}/${c.id}">${imgTag(img, 'hero-img')}${txt}</a></li>`
+        : `<li class="card${un ? '' : ' read'}" data-id="${c.id}"><a href="#/a/${c.rep}/${c.id}">${txt}${thumbs ? imgTag(img, 'thumb') : ''}</a></li>`;
     })
     .join('');
+  const all = viewClusters();
+  const counts = {};
+  for (const c of all) counts[c.cat] = (counts[c.cat] || 0) + 1;
+  const cats = (idx.categories || []).filter((k) => counts[k]);
+  const chips = `<div class="chips" role="tablist">${[['', 'Sve', all.length], ...cats.map((k) => [k, k, counts[k]])]
+    .map(([k, label, n]) => `<button data-cat="${esc(k)}" aria-pressed="${S.cat === k}">${esc(label)}<span>${n}</span></button>`)
+    .join('')}</div>`;
   const today = new Date().toLocaleDateString('sr-Latn-RS', { weekday: 'long', day: 'numeric', month: 'long' });
 
   app.innerHTML = `<header class="home-head">
@@ -286,12 +303,19 @@ function renderList() {
         <button role="tab" data-tab="top" aria-selected="${S.tab === 'top'}">Najvažnije</button>
         <button role="tab" data-tab="new" aria-selected="${S.tab === 'new'}">Najnovije</button>
       </div>
+      ${chips}
       <div class="list-tools"><span>${list.length} vesti</span><button class="link-btn" data-act="allread">Označi sve kao pročitano</button></div>
       ${shown.length ? `<ul class="list">${cards}</ul>` : '<p class="empty">Nema vesti za prikaz.</p>'}
       ${list.length > S.limit ? `<button class="more" data-act="more">Prikaži još (${list.length - S.limit})</button>` : ''}
       <p class="foot">${Object.keys(idx.items).length} članaka iz ${idx.sources.length} izvora, spojeno u ${idx.clusters.length} vesti</p>
     </main>`;
-  requestAnimationFrame(() => window.scrollTo(0, S.listScroll));
+  requestAnimationFrame(() => {
+    window.scrollTo(0, S.listScroll);
+    const card = S.lastStory && S.lastStory !== S.leftFrom && document.querySelector(`.card[data-id="${S.lastStory}"]`);
+    if (card) card.scrollIntoView({ block: 'center' });
+    S.leftFrom = S.lastStory = null;
+    document.querySelector('.chips [aria-pressed="true"]')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+  });
 }
 
 async function renderArticle(itemId, clusterId) {
@@ -305,15 +329,28 @@ async function renderArticle(itemId, clusterId) {
     store.set('read', S.read);
   }
   const others = (cluster?.it || []).filter((id) => id !== itemId && visible(id));
+  S.lastStory = cluster?.id || null;
+  const order = ranked();
+  const pos = cluster ? order.findIndex((c) => c.id === cluster.id) : -1;
+  const prev = pos > 0 ? order[pos - 1] : null;
+  const next = pos >= 0 && pos < order.length - 1 ? order[pos + 1] : null;
+  const navCard = (c, dir) => {
+    if (!c) return '<span></span>';
+    const o = idx.items[c.rep];
+    return `<a class="nav-card ${dir}" href="#/a/${c.rep}/${c.id}" data-go="${dir === 'prev' ? -1 : 1}">
+      <span class="nav-dir">${dir === 'prev' ? '← Prethodna' : 'Sledeća →'}</span><span class="nav-t">${esc(lat(o.t))}</span></a>`;
+  };
+  const slide = S.slide;
+  S.slide = null;
 
   app.innerHTML =
     bar(
       `<a class="icon-btn" href="#/" data-act="back" aria-label="Nazad">${I.back}</a>
-       <span class="crumb"></span>`,
+       <span class="crumb" data-idle="${pos >= 0 ? `${pos + 1} / ${order.length}` : ''}">${pos >= 0 ? `${pos + 1} / ${order.length}` : ''}</span>`,
       `<span class="size-ctl"><button data-act="smaller" aria-label="Manji tekst">A</button><button data-act="bigger" aria-label="Veći tekst">A</button></span>
        <a class="pill-btn" href="${esc(it.u)}" target="_blank" rel="noopener noreferrer">Original ${I.ext}</a>`,
     ) +
-    `<main class="wrap"><article class="reader">
+    `<main class="wrap"><article class="reader${slide ? ' slide-' + slide : ''}">
       <div class="kicker"><span class="src" style="--c:${esc(src.color)}">${esc(src.name)}</span><span>${ago(it.p)}</span>
         ${it.w ? `<span>${Math.max(1, Math.round(it.w / 220))} min čitanja</span>` : ''}<span class="byline"></span></div>
       <h1>${esc(lat(it.t))}</h1>
@@ -325,13 +362,15 @@ async function renderArticle(itemId, clusterId) {
           return `<li class="card"><a href="#/a/${id}/${cluster.id}"><div class="txt"><div class="meta"><span class="src" style="--c:${esc(os.color)}">${esc(os.name)}</span><span>${ago(o.p)}</span></div><h2>${esc(lat(o.t))}</h2></div>${S.prefs.thumbs !== false ? imgTag(o.i, 'thumb') : ''}</a></li>`;
         })
         .join('')}</ul></section>` : ''}
+      ${prev || next ? `<nav class="story-nav">${navCard(prev, 'prev')}${navCard(next, 'next')}</nav>
+        <p class="swipe-hint">Prevuci levo ili desno za sledeću vest</p>` : ''}
     </article></main>`;
   window.scrollTo(0, 0);
 
   const box = $('.content');
   const heroTag = (src) => `<img class="hero" src="${esc(src)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">`;
   const fallback = (why) => {
-    box.innerHTML = `${it.i ? heroTag(it.i) : ''}
+    box.innerHTML = `${bigImg(it) ? heroTag(bigImg(it)) : ''}
       ${it.l ? `<div class="body"><p>${esc(lat(it.l))}</p></div>` : ''}
       <p class="notice">${why}</p>
       <a class="cta" href="${esc(it.u)}" target="_blank" rel="noopener noreferrer">Otvori na sajtu ${I.ext}</a>`;
@@ -355,7 +394,7 @@ async function renderArticle(itemId, clusterId) {
     }
     latinizeNode(body);
     // Lead image: skip it when the article already opens with a picture or contains the same one.
-    const hero = it.i || a.image;
+    const hero = a.image || bigImg(it);
     const first = [...body.children].find((el) => el.textContent.trim() || el.querySelector('img') || el.tagName === 'IMG');
     const opensWithImage = first && (first.tagName === 'IMG' || first.tagName === 'FIGURE' || (!first.textContent.trim() && first.querySelector('img')));
     const contains = hero && [...body.querySelectorAll('img')].some((im) => imgKey(im.getAttribute('src')) === imgKey(hero));
@@ -460,13 +499,68 @@ function renderUnlock(err = '') {
   $('#pass').focus();
 }
 
+/* ---------- next / previous story ---------- */
+function goStory(dir) {
+  const parts = (location.hash || '').slice(2).split('/');
+  if (parts[0] !== 'a') return false;
+  const order = ranked();
+  const i = order.findIndex((c) => c.id === parts[2]);
+  const t = i >= 0 ? order[i + dir] : null;
+  if (!t) {
+    toast(dir > 0 ? 'Nema više vesti' : 'Ovo je prva vest');
+    return false;
+  }
+  S.slide = dir > 0 ? 'next' : 'prev';
+  S.replacing = true; // keep Back pointed at the list
+  location.replace(`#/a/${t.rep}/${t.id}`);
+  return true;
+}
+
+// Horizontal swipe in the reader. Edges are left to Android's back gesture.
+let swipe = null;
+document.addEventListener('touchstart', (e) => {
+  const reader = document.querySelector('.reader');
+  const t = e.touches[0];
+  if (!reader || e.touches.length > 1 || t.clientX < 28 || t.clientX > innerWidth - 28) return;
+  if (e.target.closest('table, pre, .size-ctl, .bar')) return;
+  swipe = { x: t.clientX, y: t.clientY, dir: null, el: reader };
+}, { passive: true });
+document.addEventListener('touchmove', (e) => {
+  if (!swipe) return;
+  const t = e.touches[0];
+  const dx = t.clientX - swipe.x;
+  const dy = t.clientY - swipe.y;
+  if (!swipe.dir) {
+    if (Math.abs(dx) > 14 && Math.abs(dx) > Math.abs(dy) * 1.6) swipe.dir = 'h';
+    else if (Math.abs(dy) > 12) return (swipe = null);
+    else return;
+  }
+  swipe.dx = dx;
+  swipe.el.style.transition = 'none';
+  swipe.el.style.transform = `translateX(${dx * 0.55}px)`;
+  swipe.el.style.opacity = String(1 - Math.min(Math.abs(dx) / 700, 0.35));
+}, { passive: true });
+document.addEventListener('touchend', () => {
+  if (!swipe) return;
+  const { el, dx = 0, dir } = swipe;
+  swipe = null;
+  if (dir === 'h' && Math.abs(dx) > 80 && goStory(dx < 0 ? 1 : -1)) return;
+  el.style.transition = 'transform .2s ease, opacity .2s ease';
+  el.style.transform = '';
+  el.style.opacity = '';
+});
+
 /* ---------- routing ---------- */
 let current = '';
 function route() {
   if (!S.index) return;
   const h = location.hash || '#/';
-  if (current && h !== current) S.navs = h === '#/' ? 0 : (S.navs || 0) + 1;
-  if (current === '#/' && h !== '#/') S.listScroll = window.scrollY;
+  if (current && h !== current && !S.replacing) S.navs = h === '#/' ? 0 : (S.navs || 0) + 1;
+  S.replacing = false;
+  if (current === '#/' && h !== '#/') {
+    S.listScroll = window.scrollY;
+    S.leftFrom = h.split('/')[3] || null;
+  }
   current = h;
   const parts = h.slice(2).split('/');
   if (parts[0] === 'a' && parts[1]) return renderArticle(parts[1], parts[2]);
@@ -477,8 +571,20 @@ window.addEventListener('hashchange', route);
 
 /* ---------- events ---------- */
 app.addEventListener('click', (e) => {
-  const t = e.target.closest('[data-act],[data-tab],[data-pref]');
+  const go = e.target.closest('[data-go]');
+  if (go) {
+    e.preventDefault();
+    return goStory(+go.dataset.go);
+  }
+  const t = e.target.closest('[data-act],[data-tab],[data-pref],[data-cat]');
   if (!t) return;
+  if (t.dataset.cat !== undefined) {
+    S.cat = t.dataset.cat;
+    store.set('cat', S.cat);
+    S.limit = 60;
+    S.listScroll = 0;
+    return renderList();
+  }
   if (t.dataset.tab) {
     S.tab = t.dataset.tab;
     store.set('tab', S.tab);
@@ -554,9 +660,13 @@ window.addEventListener('scroll', () => {
   const crumb = bar.querySelector('.crumb');
   if (h1 && crumb) {
     const past = h1.getBoundingClientRect().bottom < 60;
-    crumb.textContent = past ? h1.textContent : '';
+    crumb.textContent = past ? h1.textContent : crumb.dataset.idle || '';
   }
 }, { passive: true });
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') goStory(e.key === 'ArrowRight' ? 1 : -1);
+});
 
 // Refresh when coming back to the app after a while.
 document.addEventListener('visibilitychange', () => {
