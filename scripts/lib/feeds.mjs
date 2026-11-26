@@ -105,6 +105,11 @@ export function parseFeed(xml, base) {
       lead: stripHtml(descHtml),
       image,
       cats: cats.slice(0, 6),
+      // Full text some feeds carry (WordPress content:encoded): a fallback when the page itself can't be fetched.
+      full: (() => {
+        const html = decodeEntities(tag(b, 'content:encoded') || tag(b, 'content'));
+        return stripHtml(html).split(' ').length >= 120 ? html : '';
+      })(),
     });
   }
   return items;

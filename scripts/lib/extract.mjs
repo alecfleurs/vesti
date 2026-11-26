@@ -122,3 +122,12 @@ export async function extractArticle(url) {
     section,
   };
 }
+
+/** Builds an article from the full text carried in the feed (used when the page blocks downloads). */
+export function articleFromFeed(html, url) {
+  const clean = sanitize(html, url);
+  const text = clean.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const words = text ? text.split(' ').length : 0;
+  if (words < 120) throw new Error(`feed text too short (${words} words)`);
+  return { html: clean, words, excerpt: '', byline: '', image: '', published: null, section: '', fromFeed: true };
+}

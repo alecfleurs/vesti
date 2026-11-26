@@ -123,11 +123,13 @@ await Promise.all(
         if (raw.lead) prev.lead = raw.lead;
         if (raw.image) prev.image = raw.image;
         if (raw.cats?.length) prev.cats = raw.cats;
+        if (raw.full && !prev.x) prev.full = raw.full;
         continue;
       }
       state.items[id] = {
         id, source: src.id, url, title: raw.title, lead: raw.lead || '', image: raw.image || '',
         published: raw.time, firstSeen: now, cats: raw.cats || [],
+        ...(raw.full ? { full: raw.full } : {}),
       };
       added++;
     }
@@ -164,9 +166,10 @@ log(`pruned ${pruned}`);
 
 // ---------- 3. extract full text ----------
 let extractArticle = null;
+let articleFromFeed = null;
 let EV = 0;
 try {
-  ({ extractArticle, EXTRACT_VERSION: EV } = await import('./lib/extract.mjs'));
+  ({ extractArticle, articleFromFeed, EXTRACT_VERSION: EV } = await import('./lib/extract.mjs'));
 } catch (e) {
   log(`! extraction disabled (${e.code || e.message}); run npm install`);
 }
@@ -183,7 +186,7 @@ if (extractArticle) {
       const hours = Math.max(config.extractHours, sources.find((x) => x.id === it.source)?.retainHours || 0);
       return (!it.x || it.ev !== EV) && itemTime(it) > now - hours * 3600e3;
     })
-    .filter((it) => !it.fail || (it.fail < 3 && now - it.lastTry > 2 * 3600e3))
+    .filter((it) => !it.fail || (it.full && it.fail < 4) || (it.fail < 3 && now - it.lastTry > 2 * 3600e3))
     .sort((a, b) => (a.x ? 1 : 0) - (b.x ? 1 : 0) || itemTime(b) - itemTime(a))
     .slice(0, config.maxExtractPerRun ?? 150);
   const bySource = new Map();
@@ -191,12 +194,21 @@ if (extractArticle) {
   let ok = 0;
   let bad = 0;
   const failures = {};
+  let fromFeed = 0;
   await Promise.all(
     [...bySource.values()].map(async (list) => {
       for (const it of list) {
         it.lastTry = now;
         try {
-          const a = await extractArticle(it.url);
+          let a;
+          try {
+            a = await extractArticle(it.url);
+          } catch (e) {
+            if (!it.full) throw e;
+            a = articleFromFeed(it.full, it.url); // page blocked or broken: use the feed's full text
+            fromFeed++;
+          }
+          delete it.full;
           await writeFile(path.join(ART, `${it.id}.json`), JSON.stringify(a));
           it.x = 1;
           it.ev = EV;
@@ -226,7 +238,7 @@ if (extractArticle) {
       }
     }),
   );
-  log(`extracted ${ok}, failed ${bad}, queued ${due.length}`);
+  log(`extracted ${ok} (${fromFeed} from feed text), failed ${bad}, queued ${due.length}`);
   for (const [k, n] of Object.entries(failures).sort((a, b) => b[1] - a[1]).slice(0, 8)) log(`    fail x${n} ${k}`);
   const pending = {};
   for (const it of Object.values(state.items)) {
