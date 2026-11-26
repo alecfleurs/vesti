@@ -93,6 +93,13 @@
   "threads": {
     "threshold": 0.2,
     "windowHours": 72,
-    "maxSize": 6
-  }
+    "maxSize": 6,
+    "eventMin": 0.06
+  },
+  "excludeTitles": [
+    "black friday",
+    "crni petak",
+    "popust(i|e|a)? do \\d+",
+    "akcij[ae] .*(popust|ušted|ustedi)"
+  ]
 }

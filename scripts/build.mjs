@@ -29,6 +29,7 @@ if (!key || key.length < 8) {
 
 const config = JSON.parse(await readFile(path.join(ROOT, 'config.json'), 'utf8'));
 const globalExclude = (config.exclude || []).map((r) => new RegExp(r, 'i'));
+const titleExclude = (config.excludeTitles || []).map((r) => new RegExp(r, 'i'));
 const catRules = (config.categories || []).map((c) => ({ name: c.name, re: new RegExp(c.match, 'i'), weak: !!c.weak }));
 const slug = (t) => '/' + fold(t).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '/';
 // URL section first, then the feed's own category tags, then the source default.
@@ -115,6 +116,7 @@ await Promise.all(
       }
       const p = new URL(url).pathname;
       if (src.exclude.some((r) => r.test(url)) || globalExclude.some((r) => r.test(p))) continue;
+      if (titleExclude.some((r) => r.test(fold(raw.title)) || r.test(raw.title))) continue; // promos
       if (raw.time && raw.time < now - (src.retainHours || config.retainHours) * 3600e3) continue;
       kept++;
       const id = idOf(url);
@@ -155,7 +157,7 @@ for (const [id, it] of Object.entries(state.items)) {
       return '';
     }
   })();
-  const excluded = src && (src.exclude.some((r) => r.test(it.url)) || globalExclude.some((r) => r.test(urlPath)));
+  const excluded = src && (src.exclude.some((r) => r.test(it.url)) || globalExclude.some((r) => r.test(urlPath)) || titleExclude.some((r) => r.test(fold(it.title)) || r.test(it.title)));
   if (!active.has(it.source) || excluded || itemTime(it) < now - (src?.retainHours || config.retainHours) * 3600e3) {
     delete state.items[id];
     await rm(path.join(ART, `${id}.json`), { force: true });

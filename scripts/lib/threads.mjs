@@ -33,6 +33,7 @@ export function threadClusters(items, clusters, opts = {}) {
   const windowMs = (opts.windowHours ?? 72) * 3600e3;
   const threshold = opts.threshold ?? 0.22;
   const maxSize = opts.maxSize ?? 6;
+  const eventMin = opts.eventMin ?? 0.06;
 
   // Words ever seen lowercase are ordinary words, not names.
   const lowerSeen = new Set();
@@ -77,6 +78,9 @@ export function threadClusters(items, clusters, opts = {}) {
     const v = new Map();
     for (const [k, w] of x.tf) v.set(k, w * Math.log(1 + N / df.get(k)));
     x.vec = normalize(v);
+    // Same vector without names: measures whether two steps share WHAT happened, not just WHO.
+    const allNames = new Set([...x.names].concat([...x.pairs].flatMap((p) => p.split('_'))));
+    x.event = normalize(new Map([...v].filter(([k]) => !allNames.has(k))));
     // Anchors: a full name seen in a few stories, or a single name seen in at most 3.
     x.rare = new Set([
       ...[...x.pairs].filter((n) => cf.get(n) >= 2 && cf.get(n) <= rareMax),
@@ -99,6 +103,7 @@ export function threadClusters(items, clusters, opts = {}) {
         for (const m of t.members) {
           const sh = [...x.rare].filter((n) => m.rare.has(n));
           if (!sh.length) continue;
+          if (cosine(x.event, m.event) < eventMin) continue; // same name, different event
           const sim = cosine(x.vec, m.vec);
           if (sim > s) {
             s = sim;
