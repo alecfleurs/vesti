@@ -1,7 +1,7 @@
 {
   "name": "Vesti",
   "short_name": "Vesti",
-  "description": "Srpske vesti bez reklama, bez duplikata",
+  "description": "Vesti iz srpskih medija na jednom mestu, bez reklama i bez duplikata",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -9,8 +9,31 @@
   "theme_color": "#f4f4f2",
   "lang": "sr-Latn",
   "icons": [
-    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "id": "./",
+  "display_override": [
+    "standalone"
+  ],
+  "orientation": "portrait",
+  "categories": [
+    "news"
   ]
 }

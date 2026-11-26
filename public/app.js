@@ -75,6 +75,8 @@ function ago(t) {
 
 /* ---------- icons ---------- */
 const I = {
+  share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>',
+  install: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M12 7v7"/><path d="M9 11l3 3 3-3"/></svg>',
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
   refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>',
   gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
@@ -299,6 +301,9 @@ function renderList() {
         <a class="icon-btn" href="#/settings" aria-label="Podešavanja">${I.gear}</a></div>
     </header>
     <main class="wrap">
+      ${canOfferInstall() && !store.get('installDismissed') ? `<div class="install-banner">${I.install}
+        <div class="grow"><b>Instaliraj Vesti</b><span>Kao prava aplikacija, bez pregledača</span></div>
+        <button class="pill-btn" data-act="install">Instaliraj</button><button class="x" data-act="install-dismiss" aria-label="Zatvori">×</button></div>` : ''}
       <div class="seg-tabs" role="tablist">
         <button role="tab" data-tab="top" aria-selected="${S.tab === 'top'}">Najvažnije</button>
         <button role="tab" data-tab="new" aria-selected="${S.tab === 'new'}">Najnovije</button>
@@ -456,6 +461,14 @@ function renderSettings() {
         <p class="row hint" style="border:0;min-height:0;padding:0 0 14px">${repo
           ? 'Otvara GitHub sa pripremljenim fajlom. Potvrdi sa Commit changes. Izvor se pojavljuje posle sledećeg ažuriranja.'
           : 'Dostupno kada aplikacija radi sa GitHub Pages.'}</p>
+      </section>
+
+      <div class="panel-label">Podeli i instaliraj</div>
+      <section class="panel">
+        ${isStandalone() ? `<div class="row"><span class="status ok"></span><div class="grow">Aplikacija je instalirana</div></div>` : canOfferInstall()
+          ? `<button class="row" data-act="install"><div class="grow">Instaliraj aplikaciju<div class="hint">Ikonica na početnom ekranu, otvara se bez pregledača</div></div>${I.install}</button>`
+          : `<div class="row"><div class="grow">Instaliraj aplikaciju<div class="hint">U Chrome meniju ⋮ izaberi „Instaliraj aplikaciju“ ili „Dodaj na početni ekran“</div></div></div>`}
+        <button class="row" data-act="share"><div class="grow">Pošalji link porodici i prijateljima<div class="hint">Link sadrži lozinku, pa se aplikacija otključava sama. Šalji ga samo ljudima kojima veruješ.</div></div>${I.share}</button>
       </section>
 
       <div class="panel-label">Održavanje</div>
@@ -620,6 +633,13 @@ app.addEventListener('click', (e) => {
     case 'bigger':
       S.prefs.size = Math.min(24, Math.max(15, S.prefs.size + (t.dataset.act === 'bigger' ? 1 : -1)));
       return savePrefs();
+    case 'install':
+      return doInstall();
+    case 'install-dismiss':
+      store.set('installDismissed', true);
+      return renderList();
+    case 'share':
+      return doShare();
     case 'logout':
       store.del('key');
       store.del('pass');
@@ -692,6 +712,84 @@ async function prefetch() {
   await Promise.all([worker(), worker(), worker()]);
 }
 
+/* ---------- install + share ---------- */
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+let installEvt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  installEvt = e;
+  if (S.index && !location.hash.startsWith('#/a/')) route(); // reveal the install button / banner, never mid-article
+});
+window.addEventListener('appinstalled', () => {
+  installEvt = null;
+  store.set('installDismissed', true);
+  toast('Aplikacija je instalirana');
+  if (S.index) route();
+});
+const canOfferInstall = () => !isStandalone() && (installEvt || isIOS());
+
+async function doInstall() {
+  if (installEvt) {
+    installEvt.prompt();
+    const { outcome } = await installEvt.userChoice;
+    installEvt = null;
+    if (outcome === 'accepted') store.set('installDismissed', true);
+    return route();
+  }
+  showSheet(`<h2>Instaliraj na iPhone</h2>
+    <ol class="steps"><li>Dodirni dugme <b>Deli</b> <span class="ios-share">${I.share}</span> na dnu Safarija</li>
+    <li>Izaberi <b>Dodaj na početni ekran</b></li><li>Potvrdi sa <b>Dodaj</b></li></ol>
+    <p class="hint">Radi samo iz Safarija. Aplikacija se zatim otvara preko celog ekrana, bez pregledača.</p>`);
+}
+
+function shareLink() {
+  const pass = store.get('pass');
+  return pass ? `${location.origin}${location.pathname}#k=${encodeURIComponent(pass)}` : '';
+}
+async function doShare() {
+  const url = shareLink();
+  if (!url) return toast('Lozinka nije sačuvana na ovom uređaju');
+  const text = 'Vesti bez reklama, sa svih portala na jednom mestu. Otvori link i instaliraj aplikaciju:';
+  if (navigator.share) {
+    try {
+      return await navigator.share({ title: 'Vesti', text, url });
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(`${text} ${url}`);
+    toast('Link je kopiran');
+  } catch {
+    showSheet(`<h2>Link za deljenje</h2><textarea class="share-box" readonly>${esc(url)}</textarea>`);
+    $('.share-box').select();
+  }
+}
+
+function showSheet(html) {
+  document.querySelector('.sheet-wrap')?.remove();
+  const w = document.createElement('div');
+  w.className = 'sheet-wrap';
+  w.innerHTML = `<div class="sheet" role="dialog">${html}<button class="primary" data-close>U redu</button></div>`;
+  w.addEventListener('click', (e) => {
+    if (e.target === w || e.target.closest('[data-close]')) w.remove();
+  });
+  document.body.appendChild(w);
+}
+
+// A shared link carries the password after "#k=". Take it, then remove it from the address bar and history.
+function takeLinkPassword() {
+  const m = /^#k=(.+)$/.exec(location.hash);
+  if (!m) return null;
+  let pass = null;
+  try {
+    pass = decodeURIComponent(m[1]);
+  } catch {}
+  history.replaceState(null, '', location.pathname + location.search + '#/');
+  return pass;
+}
+
 /* ---------- boot ---------- */
 applyPrefs();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
@@ -699,5 +797,7 @@ if (!('DecompressionStream' in window) || !crypto.subtle) {
   app.innerHTML = '<p class="empty">Ovaj pregledač je prestar za aplikaciju.</p>';
 } else {
   app.innerHTML = '<p class="empty">Učitavam…</p>';
-  load();
+  const linkPass = takeLinkPassword();
+  if (linkPass) store.del('key'); // a fresh link wins over a stale saved key
+  load(linkPass || undefined);
 }
