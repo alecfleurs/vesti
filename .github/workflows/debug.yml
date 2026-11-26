@@ -9,6 +9,9 @@ on:
       source:
         description: Only this source id (optional)
         default: ''
+      title_re:
+        description: Only articles whose title matches this regex (optional)
+        default: ''
       links_url:
         description: List feed links on this page instead (optional)
         default: ''
@@ -28,5 +31,6 @@ jobs:
       - env:
           HINTS: '1'
           LINKS_URL: ${{ inputs.links_url }}
+          TITLE_RE: ${{ inputs.title_re }}
           LINKS_RE: rss|feed|xml|rubrik
         run: node scripts/debug-extract.mjs "${{ inputs.per_source }}" "${{ inputs.source }}"

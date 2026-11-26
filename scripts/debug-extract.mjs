@@ -33,6 +33,8 @@ if (process.env.LINKS_URL) {
   }
   process.exit(0);
 }
+// TITLE_RE=<regex>: extract only matching articles and print their raw cleaned HTML head.
+const titleRe = process.env.TITLE_RE ? new RegExp(process.env.TITLE_RE, 'i') : null;
 const per = Number(process.argv[2] || 2);
 const only = process.argv[3];
 for (const f of (await readdir('sources')).filter((f) => f.endsWith('.json'))) {
@@ -40,7 +42,8 @@ for (const f of (await readdir('sources')).filter((f) => f.endsWith('.json'))) {
   if (only && id !== only) continue;
   const src = JSON.parse(await readFile(`sources/${f}`, 'utf8'));
   const { items } = await loadSource(src);
-  for (const it of items.filter((i) => !/\/(english|sport|video)\//.test(i.url)).slice(0, per)) {
+  const pick = titleRe ? items.filter((i) => titleRe.test(i.title)) : items.filter((i) => !/\/(english|sport|video)\//.test(i.url)).slice(0, per);
+  for (const it of pick) {
     console.log(`\n=== ${id}: ${it.title}\n    ${it.url}`);
     try {
       const a = await extractArticle(it.url);
@@ -51,6 +54,8 @@ for (const f of (await readdir('sources')).filter((f) => f.endsWith('.json'))) {
         .replace(/<[^>]+>/g, '').replace(/\n{2,}/g, '\n').trim();
       if (process.env.HINTS) for (const h of await sectionHints(it.url)) console.log('    hint ' + h);
       console.log(`    section=${a.section || '-'}`);
+      if (titleRe) console.log('    RAW: ' + a.html.slice(0, 1500).replace(/\s+/g, ' '));
+      if (titleRe) console.log('    feedImg=' + it.image + '\n    ogImg=' + a.image);
       console.log(`    words=${a.words} feedImg=${(it.image || '').split('/').pop().slice(0, 40)} ogImg=${a.image.split('/').pop().slice(0, 40)}`);
       console.log(outline.split('\n').map((l) => '  | ' + l.slice(0, 150)).join('\n'));
     } catch (e) {
