@@ -31,7 +31,7 @@ function cosine(a, b) {
  */
 export function threadClusters(items, clusters, opts = {}) {
   const windowMs = (opts.windowHours ?? 72) * 3600e3;
-  const threshold = opts.threshold ?? 0.15;
+  const threshold = opts.threshold ?? 0.22;
   const maxSize = opts.maxSize ?? 6;
 
   // Words ever seen lowercase are ordinary words, not names.
@@ -52,7 +52,7 @@ export function threadClusters(items, clusters, opts = {}) {
       add(tokens(slugWords(it.url)), 1.5);
       add(tokens(it.lead).slice(0, 45), 1);
       // Names: capitalized words never seen lowercase. Full names ("Pavle Bihali") also as pairs.
-      const ct = [...casedTokens(it.title), ...casedTokens((it.lead || '').slice(0, 300))];
+      const ct = casedTokens(it.title);
       for (let i = 0; i < ct.length; i++) {
         const isName = (x) => x && x.cap && !lowerSeen.has(x.t) && x.t.length >= 3;
         if (!isName(ct[i])) continue;
@@ -88,13 +88,23 @@ export function threadClusters(items, clusters, opts = {}) {
   const threads = [];
   const debug = [];
   for (const x of info) {
+    // Link to the thread whose single closest step shares a name with this one and is similar enough.
+    // Comparing step to step (not to the thread average) stops threads drifting from topic to topic.
     const fits = [];
     if (x.rare.size) {
       for (const t of threads) {
         if (t.dead || x.c.first - t.last > windowMs) continue;
-        const shared = [...x.rare].filter((n) => t.rare.has(n));
-        if (!shared.length) continue;
-        const s = cosine(x.vec, t.norm);
+        let s = 0;
+        let shared = null;
+        for (const m of t.members) {
+          const sh = [...x.rare].filter((n) => m.rare.has(n));
+          if (!sh.length) continue;
+          const sim = cosine(x.vec, m.vec);
+          if (sim > s) {
+            s = sim;
+            shared = sh;
+          }
+        }
         if (s >= threshold) fits.push({ t, s, shared });
       }
     }
@@ -106,10 +116,8 @@ export function threadClusters(items, clusters, opts = {}) {
     // The new step fits several threads: they are the same story told from different angles, merge them.
     if (best) {
       for (const { t } of fits.slice(1)) {
-        if (best.members.length + t.members.length >= maxSize) continue;
+        if (best.members.length + t.members.length > maxSize) continue;
         best.members.push(...t.members);
-        for (const [k, w] of t.sum) best.sum.set(k, (best.sum.get(k) || 0) + w);
-        for (const n of t.rare) best.rare.add(n);
         best.last = Math.max(best.last, t.last);
         t.dead = true;
         debug.push({ merged: t.id, into: best.id });

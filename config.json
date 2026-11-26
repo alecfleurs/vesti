@@ -91,7 +91,7 @@
     }
   ],
   "threads": {
-    "threshold": 0.15,
+    "threshold": 0.2,
     "windowHours": 72,
     "maxSize": 6
   }
