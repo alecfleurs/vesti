@@ -10,6 +10,7 @@ import path from 'node:path';
 import { loadSource } from './lib/feeds.mjs';
 import { clusterItems } from './lib/cluster.mjs';
 import { threadClusters } from './lib/threads.mjs';
+import { buildBrief } from './lib/brief.mjs';
 import { deriveKey, encryptJson, randomSalt, ITERATIONS } from './lib/crypto.mjs';
 import { truncate, fold } from './lib/text.mjs';
 import { findProblems, syncIssues } from './lib/health.mjs';
@@ -29,8 +30,9 @@ if (!key || key.length < 8) {
 
 const config = JSON.parse(await readFile(path.join(ROOT, 'config.json'), 'utf8'));
 const globalExclude = (config.exclude || []).map((r) => new RegExp(r, 'i'));
-const titleExclude = (config.excludeTitles || []).map((r) => new RegExp(r, 'i'));
-const catRules = (config.categories || []).map((c) => ({ name: c.name, re: new RegExp(c.match, 'i'), weak: !!c.weak }));
+const promoTitles = (config.promoTitles || []).map((r) => new RegExp(r, 'i'));
+const catRules = (config.categories || []).map((c) => ({ name: c.name, re: new RegExp(c.match, 'i'), weak: !!c.weak, group: c.group || '' }));
+const optionalCats = new Set(catRules.filter((r) => r.group).map((r) => r.name)); // hidden unless switched on in the app
 const slug = (t) => '/' + fold(t).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '/';
 // URL section first, then the feed's own category tags, then the source default.
 function categorize(it, src) {
@@ -38,6 +40,7 @@ function categorize(it, src) {
   try {
     path = new URL(it.url).pathname.toLowerCase();
   } catch {}
+  if (promoTitles.some((r) => r.test(it.title) || r.test(fold(it.title)))) return 'Promo';
   // A "weak" rule (generic sections like /vesti/) loses to a specific signal or the source default.
   let weak = null;
   for (const r of catRules) {
@@ -116,7 +119,6 @@ await Promise.all(
       }
       const p = new URL(url).pathname;
       if (src.exclude.some((r) => r.test(url)) || globalExclude.some((r) => r.test(p))) continue;
-      if (titleExclude.some((r) => r.test(fold(raw.title)) || r.test(raw.title))) continue; // promos
       if (raw.time && raw.time < now - (src.retainHours || config.retainHours) * 3600e3) continue;
       kept++;
       const id = idOf(url);
@@ -157,7 +159,7 @@ for (const [id, it] of Object.entries(state.items)) {
       return '';
     }
   })();
-  const excluded = src && (src.exclude.some((r) => r.test(it.url)) || globalExclude.some((r) => r.test(urlPath)) || titleExclude.some((r) => r.test(fold(it.title)) || r.test(it.title)));
+  const excluded = src && (src.exclude.some((r) => r.test(it.url)) || globalExclude.some((r) => r.test(urlPath)));
   if (!active.has(it.source) || excluded || itemTime(it) < now - (src?.retainHours || config.retainHours) * 3600e3) {
     delete state.items[id];
     await rm(path.join(ART, `${id}.json`), { force: true });
@@ -281,6 +283,15 @@ const { threadOf, threads } = threadClusters(itemMap, clusters, config.threads |
 }
 log(`clusters: ${clusters.length} from ${all.length} items (${clusters.filter((c) => c.sources > 1).length} multi-source)`);
 
+const brief = buildBrief(
+  clusters.map((c) => ({ ...c, rep: c.rep })),
+  itemMap,
+  threadOf,
+  optionalCats,
+  config.brief || {},
+);
+log(`ukratko: ${brief.length} stories`);
+
 // ---------- 5. write site ----------
 await rm(DIST, { recursive: true, force: true });
 await cp(path.join(ROOT, 'public'), DIST, { recursive: true });
@@ -301,6 +312,8 @@ const index = {
   title: config.title || 'Vesti',
   repo: process.env.GITHUB_REPOSITORY || config.repo || '',
   categories: catRules.map((r) => r.name).concat('Ostalo'),
+  groups: Object.fromEntries(catRules.filter((r) => r.group).map((r) => [r.name, r.group])),
+  brief,
   // Token that may only start update.yml; lives inside the encrypted index, so only password holders get it.
   dispatch: process.env.DISPATCH_TOKEN || '',
   sources: sources.map((s) => ({

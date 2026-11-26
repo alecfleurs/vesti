@@ -26,8 +26,8 @@ const S = {
   meta: null,
   index: null,
   key: null,
-  tab: store.get('tab', 'top'),
-  cat: store.get('cat', ''),
+  tab: 'top', // the app always opens on Najvažnije, all categories
+  cat: '',
   hidden: new Set(store.get('hidden', [])),
   read: store.get('read', {}),
   prefs: Object.assign({ theme: 'auto', size: 18, latin: false }, store.get('prefs', {})),
@@ -37,7 +37,7 @@ const S = {
   lastLoad: 0,
 };
 
-const APP_VERSION = '1.8';
+const APP_VERSION = '1.9';
 const APP_BUILD = '__BUILD__'; // replaced at build time with commit + date
 
 const app = document.getElementById('app');
@@ -236,6 +236,13 @@ function pruneRead() {
 const srcById = (id) => S.index.sources.find((s) => s.id === id) || { id, name: id };
 const visible = (itemId) => !S.hidden.has(S.index.items[itemId]?.s);
 
+// Entertainment/health ("fun") and sponsored ("promo") categories are off unless switched on in Settings.
+function catAllowed(cat) {
+  const g = S.index.groups?.[cat];
+  if (!g) return true;
+  return g === 'fun' ? !!S.prefs.fun : g === 'promo' ? !!S.prefs.promo : true;
+}
+
 function viewClusters() {
   const out = [];
   for (const c of S.index.clusters) {
@@ -249,6 +256,7 @@ function viewClusters() {
       if (k !== 'Ostalo') votes[k] = (votes[k] || 0) + (id === rep ? 1.5 : 1);
     }
     const cat = Object.entries(votes).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Ostalo';
+    if (!catAllowed(cat)) continue;
     out.push({ ...c, items, rep, srcs, cat });
   }
   if (S.prefs.threads === false) return out;
@@ -311,14 +319,28 @@ const bestLead = (c) => {
   return rep && rep.length > 60 ? rep : leads.sort((a, b) => b.length - a.length)[0] || '';
 };
 
-// "Ukratko": the ten most covered stories of the last 24 hours, all categories.
+// "Ukratko": the server's list (same as the future voice briefing), minus stories from hidden sources.
 function briefing() {
+  if (!S.index.brief) return briefingLocal();
+  const byId = new Map(S.index.clusters.map((c) => [c.id, c]));
+  const out = [];
+  for (const b of S.index.brief) {
+    const c = byId.get(b.c);
+    if (!c) continue;
+    const items = c.it.filter(visible);
+    if (!items.length) continue;
+    const rep = items.includes(c.r) ? c.r : items[0];
+    out.push({ ...c, items, rep, srcs: [...new Set(items.map((id) => S.index.items[id].s))], summary: b.s });
+  }
+  return out;
+}
+function briefingLocal() {
   const now = Date.now();
   return viewClusters()
     .filter((c) => now - c.l < 24 * 3600e3)
     .map((c) => ({ c, score: ((c.rankSrc || c.srcs.length) + 0.25 * (c.items.length - c.srcs.length)) * Math.exp(-(now - c.l) / 3600e3 / 18) }))
     .sort((a, b) => b.score - a.score)
-    .slice(0, 10)
+    .slice(0, 20)
     .map((x) => x.c);
 }
 // Swipe / next-previous follow the screen the story was opened from.
@@ -362,7 +384,7 @@ function runSearch(q) {
   const best = new Map(); // cluster id -> { score, itemId }
   for (const h of searchIndex()) {
     const it = S.index.items[h.id];
-    if (!visible(h.id)) continue;
+    if (!visible(h.id) || !catAllowed(it.c || 'Ostalo')) continue;
     let score = 0;
     let all = true;
     for (const w of words) {
@@ -546,7 +568,7 @@ function renderBrief() {
     `<main class="wrap brief">
       <div class="brief-date">${esc(day.charAt(0).toUpperCase() + day.slice(1))}</div>
       <h1 class="page-title">Ukratko</h1>
-      <p class="brief-sub">${list.length} najvažnijih vesti iz poslednja 24 sata, po tome koliko ih medija prenosi.</p>
+      <p class="brief-sub">${list.length} najvažnijih vesti iz poslednja 24 sata, po tome koliko ih medija prenosi. Samo vesti, bez zabave i reklama.</p>
       <ol class="brief-list">${list
         .map((c, i) => {
           const it = idx.items[c.rep];
@@ -554,7 +576,7 @@ function renderBrief() {
           return `<li class="${isUnread(c) ? '' : 'read'}" data-id="${c.id}"><a href="#/a/${c.rep}/${c.id}">
             <span class="num">${i + 1}</span>
             <div class="txt"><h2>${esc(lat(it.t))}</h2>
-              <p>${esc(lat(summarize(bestLead(c))))}</p>
+              <p>${esc(lat(c.summary ?? summarize(bestLead(c))))}</p>
               <div class="meta"><span class="stack"><span class="dots">${dots}</span>${c.srcs.length > 1 ? `${c.srcs.length} izvora` : esc(srcById(it.s).name)}</span><span>${ago(c.l)}</span></div></div></a></li>`;
         })
         .join('')}</ol>
@@ -795,6 +817,10 @@ function renderSettings() {
           <input type="range" min="15" max="24" step="1" value="${S.prefs.size}" data-act="size"></div>
         <div class="row"><div class="grow">Slike u listi<div class="hint">Isključi za manju potrošnju podataka</div></div>
           <input type="checkbox" class="switch" data-act="thumbs" ${S.prefs.thumbs !== false ? 'checked' : ''}></div>
+        <div class="row"><div class="grow">Zabava i zdravlje<div class="hint">Estrada, rijaliti, horoskop i zdravlje, kao kategorije Zabava i Zdravlje</div></div>
+          <input type="checkbox" class="switch" data-act="fun" ${S.prefs.fun ? 'checked' : ''}></div>
+        <div class="row"><div class="grow">Sponzorisani tekstovi<div class="hint">PR članci i akcije koje mediji objavljuju kao vesti (kategorija Promo)</div></div>
+          <input type="checkbox" class="switch" data-act="promo" ${S.prefs.promo ? 'checked' : ''}></div>
         <div class="row"><div class="grow">Spoji razvoj priče<div class="hint">Nastavak iste priče (npr. hapšenje pa pritvor) prikazuje se kao jedna vest sa tokom priče</div></div>
           <input type="checkbox" class="switch" data-act="threads" ${S.prefs.threads !== false ? 'checked' : ''}></div>
         <div class="row"><div class="grow">Sve latinicom<div class="hint">Ćirilične naslove i tekstove prikazuje latinicom</div></div>
@@ -844,10 +870,10 @@ function renderSettings() {
         <p>Vesti iz ${idx.sources.length} srpskih medija na jednom mestu, bez reklama i bez ponavljanja. Za par minuta znaš šta je važno danas.</p>
         <h3 class="about-h">Zašto je pametniji</h3>
         <ul class="benefits">
-          <li><b>Bez reklama i iskačućih prozora.</b> Samo tekst i fotografije, bez kolačića i bez „pročitajte još“.</li>
+          <li><b>Bez reklama i iskačućih prozora.</b> Samo tekst i fotografije, bez kolačića i bez „pročitajte još“. Zabava, zdravlje i sponzorisani tekstovi su isključeni dok ih sam ne uključiš.</li>
           <li><b>Svaka vest samo jednom.</b> Kada više medija piše o istom događaju, priče se spajaju u jednu karticu. Lista je skoro duplo kraća.</li>
           <li><b>Svi važni mediji na jednom mestu.</b> Od dnevnih portala do istraživačkih redakcija, bez skakanja po sajtovima.</li>
-          <li><b>Ukratko.</b> Deset najvažnijih vesti iz poslednja 24 sata, sa po dve rečenice, za dva-tri minuta.</li>
+          <li><b>Ukratko.</b> Dvadeset najvažnijih vesti iz poslednja 24 sata, sa po dve rečenice, za nekoliko minuta.</li>
           <li><b>Kako ko piše.</b> Uporedi naslove različitih medija o istom događaju i sam proceni.</li>
           <li><b>Tok priče.</b> Kada se priča razvija (hapšenje, pa pritvor, pa optužnica), vidiš samo najnoviji korak, a ceo tok je u članku.</li>
           <li><b>Pretraga.</b> Nađi bilo koju vest za sekund, latinicom ili ćirilicom, sa kvačicama ili bez.</li>
@@ -1184,7 +1210,10 @@ app.addEventListener('input', (e) => {
 });
 app.addEventListener('change', (e) => {
   const t = e.target;
-  if (t.dataset.act === 'threads') {
+  if (t.dataset.act === 'fun' || t.dataset.act === 'promo') {
+    S.prefs[t.dataset.act] = t.checked;
+    savePrefs();
+  } else if (t.dataset.act === 'threads') {
     S.prefs.threads = t.checked;
     savePrefs();
   } else if (t.dataset.act === 'thumbs') {

@@ -2,7 +2,7 @@
   "title": "Vesti",
   "retainHours": 72,
   "extractHours": 48,
-  "maxItemsPerSource": 80,
+  "maxItemsPerSource": 120,
   "maxExtractPerRun": 300,
   "sourceOrder": [
     "n1",
@@ -28,10 +28,8 @@
     "fonet"
   ],
   "exclude": [
-    "/(zabava|showbiz|show-biz|horoskop|astro|rijaliti|zvezde|tracevi|lifestyle|superzena|kviz|igrice)(/|$)",
     "/(najave-emisija|video/dnevnik|video/dan-uzivo)(/|$)",
-    "/(print|naslovna-strana[^/]*|emisije)(/|$)",
-    "/(promo|pr-clanak|sponzorisano|advertorial)(/|$)"
+    "/(print|naslovna-strana[^/]*|emisije)(/|$)"
   ],
   "cluster": {
     "threshold": 0.25,
@@ -40,6 +38,21 @@
     "minShared": 2
   },
   "categories": [
+    {
+      "name": "Promo",
+      "group": "promo",
+      "match": "(^|/)(promo|pr-clanak|pr-tekst|sponzorisano|sponzorisani-sadrzaj|advertorial|promocija|marketing|partner-sadrzaj|brand-voice)(/|$)"
+    },
+    {
+      "name": "Zabava",
+      "group": "fun",
+      "match": "(^|/)(zabava|showbiz|show-biz|horoskop|astro|astrologija|rijaliti|zvezde|tracevi|superzena|kviz|igrice|estrada|jet-set|poznati|celebrity|stars|zadruga|elita)(/|$)"
+    },
+    {
+      "name": "Zdravlje",
+      "group": "fun",
+      "match": "(^|/)(zdravlje|medicina|ishrana|dijeta|fitnes|wellness|zdrav-zivot|lekovi|bolesti|zdravstvo-i-medicina)(/|$)"
+    },
     {
       "name": "Sport",
       "match": "(^|/)(sport|sportski|fudbal|kosarka|tenis|odbojka|vaterpolo|rukomet|atletika|formula-1|sampionska-liga|superliga)(/|$)"
@@ -74,7 +87,7 @@
     },
     {
       "name": "Magazin",
-      "match": "(^|/)(magazin|zdravlje|lifestyle|zivot|putovanja|hrana|kuhinja|auto|automobili|vremenska-prognoza|vreme|zanimljivosti|razno|slobodno-vreme|stil|zabava-i-slobodno-vreme)(/|$)"
+      "match": "(^|/)(magazin|lifestyle|zivot|putovanja|hrana|kuhinja|auto|automobili|vremenska-prognoza|vreme|zanimljivosti|razno|slobodno-vreme|stil|zabava-i-slobodno-vreme)(/|$)"
     },
     {
       "name": "Istraživanja",
@@ -96,10 +109,15 @@
     "maxSize": 6,
     "eventMin": 0.06
   },
-  "excludeTitles": [
+  "promoTitles": [
     "black friday",
     "crni petak",
     "popust(i|e|a)? do \\d+",
     "akcij[ae] .*(popust|ušted|ustedi)"
-  ]
+  ],
+  "brief": {
+    "size": 20,
+    "hours": 24,
+    "halfLifeHours": 18
+  }
 }
