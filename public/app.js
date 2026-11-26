@@ -37,7 +37,7 @@ const S = {
   lastLoad: 0,
 };
 
-const APP_VERSION = '2.0';
+const APP_VERSION = '2.1';
 const APP_BUILD = '__BUILD__'; // replaced at build time with commit + date
 
 const app = document.getElementById('app');
@@ -586,7 +586,7 @@ function renderBrief() {
       <div class="brief-date">${esc(day.charAt(0).toUpperCase() + day.slice(1))}</div>
       <h1 class="page-title">Ukratko</h1>
       <p class="brief-sub">${list.length} najvažnijih vesti iz poslednja 24 sata, po tome koliko ih medija prenosi. Samo vesti, bez zabave i reklama.</p>
-      ${Voice.supported ? `<button class="listen-big" data-act="listen-brief">${I.play}<span>Poslušaj Ukratko<small>oko ${Math.max(3, Math.round(list.length * 0.6))} min, za put do posla</small></span></button>` : ''}
+      ${Voice.supported ? `<button class="listen-big" data-act="listen-brief">${I.play}<span>Poslušaj Ukratko<small>${briefFull() ? 'cele vesti' : 'samo sažeci'}, oko ${briefListenMin(list)} min</small></span></button>` : ''}
       <ol class="brief-list">${list
         .map((c, i) => {
           const it = idx.items[c.rep];
@@ -823,6 +823,8 @@ async function renderArticle(itemId, clusterId) {
 }
 
 function voiceSettings() {
+  const seg = (name, val, opts) =>
+    `<div class="seg">${opts.map(([v, l]) => `<button data-pref="${name}" data-val="${v}" aria-pressed="${val === v}">${l}</button>`).join('')}</div>`;
   const local = Voice.localVoices();
   const cur = Voice.pick();
   const opts = (local.length ? local : Voice.voices())
@@ -834,6 +836,7 @@ function voiceSettings() {
         <select class="sel" data-act="voice">${opts || '<option>Nema glasova</option>'}</select></div>
       <div class="row"><div class="grow">Brzina<div class="hint">${(S.prefs.rate || 1).toFixed(1)}×</div></div>
         <input type="range" min="0.7" max="1.6" step="0.1" value="${S.prefs.rate || 1}" data-act="rate"></div>
+      <div class="row"><div class="grow">Poslušaj Ukratko<div class="hint">Cele vesti, jedna za drugom, ili samo naslov i sažetak</div></div>${seg('briefVoice', briefFull() ? 'full' : 'short', [['full', 'Cele vesti'], ['short', 'Sažeci']])}</div>
       <button class="row" data-act="voice-test"><div class="grow">Probaj glas</div>${I.play}</button>
     </section>`;
 }
@@ -1283,9 +1286,52 @@ function readArticleAloud(it) {
   Voice.start(segs, title);
 }
 
-function readBriefAloud() {
+// Which version of a story to read in full: the representative if it has text, else the longest one that does.
+const fullItem = (c) => {
+  const ids = c.items || c.it || [c.rep];
+  if (S.index.items[c.rep]?.x) return c.rep;
+  return ids.filter((id) => S.index.items[id]?.x).sort((a, b) => (S.index.items[b].w || 0) - (S.index.items[a].w || 0))[0] || null;
+};
+const briefFull = () => S.prefs.briefVoice !== 'short';
+// Listening time in minutes (~150 words a minute at normal speed).
+function briefListenMin(list) {
+  if (!briefFull()) return Math.max(3, Math.round(list.length * 0.6));
+  const words = list.reduce((n, c) => {
+    const id = fullItem(c);
+    return n + 15 + (id ? S.index.items[id].w || 250 : 50);
+  }, 0);
+  return Math.max(3, Math.round(words / 150 / (S.prefs.rate || 1)));
+}
+// Article HTML → paragraphs to read.
+function htmlBlocks(html) {
+  const doc = new DOMParser().parseFromString(html || '', 'text/html');
+  doc.querySelectorAll('figure, figcaption, script, style, .gallery').forEach((el) => el.remove());
+  return [...doc.body.querySelectorAll('p, h2, h3, h4, li, blockquote')]
+    .filter((el) => !el.querySelector('p, li')) // innermost blocks only, no double reading
+    .map((el) => el.textContent.trim())
+    .filter((t) => t.length > 2);
+}
+
+async function readBriefAloud() {
   const list = briefing();
   if (!list.length) return;
+  const full = briefFull();
+  // Load every article first, so nothing has to be fetched while driving.
+  const texts = new Map();
+  if (full) {
+    toast(`Pripremam ${list.length} vesti…`);
+    const loadOne = async (c) => {
+      const id = fullItem(c);
+      if (!id) return;
+      try {
+        const a = await decrypt(await getBin(`data/a/${id}.bin`));
+        const blocks = htmlBlocks(a.html);
+        if (blocks.length) texts.set(c.id, blocks);
+      } catch {}
+    };
+    const queue = [...list];
+    await Promise.all(Array.from({ length: 5 }, async () => { while (queue.length) await loadOne(queue.shift()); }));
+  }
   const now = new Date();
   const part = now.getHours() < 11 ? 'Dobro jutro' : now.getHours() < 18 ? 'Dobar dan' : 'Dobro veče';
   const day = now.toLocaleDateString('sr-Latn-RS', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -1302,10 +1348,13 @@ function readBriefAloud() {
         li.scrollIntoView({ block: 'center', behavior: 'smooth' });
       }
     };
-    const label = `${n + 1} od ${list.length}`;
+    const label = `Vest ${n + 1} od ${list.length}`;
     const story = Voice.chunks(`${ORD[n] || n + 1 + '.'} vest. ${it.t}.`, n, { label });
     story[0].onStart = onStart;
-    segs.push(...story, ...Voice.chunks(c.summary ?? summarize(bestLead(c)), n, { label }));
+    segs.push(...story);
+    const body = texts.get(c.id);
+    if (body) body.forEach((b) => segs.push(...Voice.chunks(b, n, { label })));
+    else segs.push(...Voice.chunks(c.summary ?? summarize(bestLead(c)), n, { label }));
   });
   segs.push(...Voice.chunks('To je sve za sada. Srećan put.', 999, { label: 'Kraj' }));
   track('listen-brief');
@@ -1761,7 +1810,7 @@ const inAppHint = () =>
 
 /* ---------- boot ---------- */
 // Existing users (they have settings) come from 1.9 and get the "what's new" note once; new users don't.
-if (!store.get('seenVersion')) store.set('seenVersion', store.get('prefs') ? '1.9' : APP_VERSION);
+if (!store.get('seenVersion')) store.set('seenVersion', store.get('prefs') ? '2.0' : APP_VERSION);
 applyPrefs();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 if (!('DecompressionStream' in window) || !crypto.subtle) {

@@ -1,16 +1,64 @@
 [
   {
+    "v": "2.1",
+    "date": "26. 11. 2026.",
+    "title": "Poslušaj Ukratko u celosti",
+    "items": [
+      [
+        "Promena",
+        "Poslušaj Ukratko sada čita svih 20 vesti u celosti: redni broj, naslov i ceo tekst članka, pa sledeća vest, bez dodirivanja telefona."
+      ],
+      [
+        "Novo",
+        "Svi članci se učitaju pre početka čitanja, pa slušanje ne zavisi od signala u vožnji."
+      ],
+      [
+        "Novo",
+        "Podešavanja → Čitanje naglas → Poslušaj Ukratko: Cele vesti (podrazumevano) ili Sažeci, za kraću vožnju."
+      ],
+      [
+        "Promena",
+        "Dugme Poslušaj Ukratko pokazuje koliko otprilike traje slušanje."
+      ],
+      [
+        "Promena",
+        "Vest bez punog teksta (npr. Peščanik) čita se kao naslov i sažetak."
+      ]
+    ]
+  },
+  {
     "v": "2.0",
     "date": "26. 11. 2026.",
     "title": "Slušaj, Sačuvano i Šta je novo",
     "items": [
-      ["Novo", "Slušaj: svaki članak može da se pročita naglas, glasom sa telefona. Radi i bez interneta."],
-      ["Novo", "Poslušaj Ukratko: 20 najvažnijih vesti kao jutarnji pregled za put do posla, sa uvodom i rednim brojem svake vesti. Odslušane vesti se označavaju kao pročitane."],
-      ["Novo", "Plejer na dnu ekrana: nazad, pauza, napred i zaustavi. Ekran ostaje upaljen dok traje čitanje, zgodno za držač u autu."],
-      ["Novo", "Podešavanja → Čitanje naglas: izbor glasa, brzina i dugme za probu."],
-      ["Novo", "Sačuvaj za kasnije: dugme u članku i ekran Sačuvano (ikonica na početnom ekranu). Sačuvane vesti ostaju dostupne i bez interneta, i posle tri dana kada nestanu iz liste."],
-      ["Novo", "Podešavanja → Pročitane vesti: Zatamni (kao do sada) ili Sakrij, da pročitane vesti potpuno nestanu iz liste."],
-      ["Novo", "Šta je novo: ova strana, sa svim verzijama aplikacije. Posle svakog ažuriranja aplikacija jednom pokaže obaveštenje."]
+      [
+        "Novo",
+        "Slušaj: svaki članak može da se pročita naglas, glasom sa telefona. Radi i bez interneta."
+      ],
+      [
+        "Novo",
+        "Poslušaj Ukratko: 20 najvažnijih vesti kao jutarnji pregled za put do posla, sa uvodom i rednim brojem svake vesti. Odslušane vesti se označavaju kao pročitane."
+      ],
+      [
+        "Novo",
+        "Plejer na dnu ekrana: nazad, pauza, napred i zaustavi. Ekran ostaje upaljen dok traje čitanje, zgodno za držač u autu."
+      ],
+      [
+        "Novo",
+        "Podešavanja → Čitanje naglas: izbor glasa, brzina i dugme za probu."
+      ],
+      [
+        "Novo",
+        "Sačuvaj za kasnije: dugme u članku i ekran Sačuvano (ikonica na početnom ekranu). Sačuvane vesti ostaju dostupne i bez interneta, i posle tri dana kada nestanu iz liste."
+      ],
+      [
+        "Novo",
+        "Podešavanja → Pročitane vesti: Zatamni (kao do sada) ili Sakrij, da pročitane vesti potpuno nestanu iz liste."
+      ],
+      [
+        "Novo",
+        "Šta je novo: ova strana, sa svim verzijama aplikacije. Posle svakog ažuriranja aplikacija jednom pokaže obaveštenje."
+      ]
     ]
   },
   {
@@ -18,11 +66,26 @@
     "date": "26. 11. 2026.",
     "title": "Ukratko sa 20 vesti, zabava i zdravlje na prekidač",
     "items": [
-      ["Promena", "Aplikacija se uvek otvara na Najvažnije, sa svim kategorijama."],
-      ["Promena", "Ukratko sada ima 20 najvažnijih vesti iz poslednja 24 sata. Spisak i kratki opisi se prave na serveru, pa su isti na svakom telefonu."],
-      ["Novo", "Podešavanja → Zabava i zdravlje: estrada, rijaliti, horoskop i zdravlje kao kategorije Zabava i Zdravlje. Podrazumevano isključeno."],
-      ["Novo", "Podešavanja → Sponzorisani tekstovi: PR članci i akcije (npr. Black Friday) kao kategorija Promo. Podrazumevano isključeno."],
-      ["Promena", "Ukratko uvek sadrži samo vesti, bez zabave i reklama."]
+      [
+        "Promena",
+        "Aplikacija se uvek otvara na Najvažnije, sa svim kategorijama."
+      ],
+      [
+        "Promena",
+        "Ukratko sada ima 20 najvažnijih vesti iz poslednja 24 sata. Spisak i kratki opisi se prave na serveru, pa su isti na svakom telefonu."
+      ],
+      [
+        "Novo",
+        "Podešavanja → Zabava i zdravlje: estrada, rijaliti, horoskop i zdravlje kao kategorije Zabava i Zdravlje. Podrazumevano isključeno."
+      ],
+      [
+        "Novo",
+        "Podešavanja → Sponzorisani tekstovi: PR članci i akcije (npr. Black Friday) kao kategorija Promo. Podrazumevano isključeno."
+      ],
+      [
+        "Promena",
+        "Ukratko uvek sadrži samo vesti, bez zabave i reklama."
+      ]
     ]
   },
   {
@@ -30,11 +93,26 @@
     "date": "26. 11. 2026.",
     "title": "Razvoj priče i pretraga",
     "items": [
-      ["Novo", "Razvoj priče: kada se priča nastavlja danima (hapšenje, pa pritvor, pa skup podrške), u listi je samo najnoviji korak, sa oznakom Razvoj priče."],
-      ["Novo", "Tok priče u članku: svi koraci iste priče, od najstarijeg, sa oznakom gde si."],
-      ["Novo", "Pretraga (lupa na početnom ekranu): naslovi i uvodi svih vesti, latinicom ili ćirilicom, sa kvačicama ili bez. Pamti poslednjih šest pretraga."],
-      ["Novo", "Podešavanja → Spoji razvoj priče, za one koji žele svaki korak kao posebnu vest."],
-      ["Ispravka", "Reklamni tekstovi tipa Black Friday više se ne pojavljuju kao vesti."]
+      [
+        "Novo",
+        "Razvoj priče: kada se priča nastavlja danima (hapšenje, pa pritvor, pa skup podrške), u listi je samo najnoviji korak, sa oznakom Razvoj priče."
+      ],
+      [
+        "Novo",
+        "Tok priče u članku: svi koraci iste priče, od najstarijeg, sa oznakom gde si."
+      ],
+      [
+        "Novo",
+        "Pretraga (lupa na početnom ekranu): naslovi i uvodi svih vesti, latinicom ili ćirilicom, sa kvačicama ili bez. Pamti poslednjih šest pretraga."
+      ],
+      [
+        "Novo",
+        "Podešavanja → Spoji razvoj priče, za one koji žele svaki korak kao posebnu vest."
+      ],
+      [
+        "Ispravka",
+        "Reklamni tekstovi tipa Black Friday više se ne pojavljuju kao vesti."
+      ]
     ]
   },
   {
@@ -42,12 +120,30 @@
     "date": "26. 11. 2026.",
     "title": "Ukratko, Kako ko piše i deljenje vesti",
     "items": [
-      ["Novo", "Ukratko: najvažnije vesti iz poslednja 24 sata, sa po dve rečenice, na jednom ekranu."],
-      ["Novo", "Kako ko piše: u vesti koju prenosi više medija vidi se naslov i prva rečenica svakog medija, jedan ispod drugog."],
-      ["Novo", "Podeli vest preko Vibera, WhatsAppa, e-pošte ili LinkedIna: naslov, kratak opis i link na ceo tekst kod izvora."],
-      ["Novo", "Automatska provera izvora: ako neki portal prestane da radi, stiže obaveštenje, a kada proradi, obaveštenje se zatvara samo."],
-      ["Promena", "Početni ekran se prikazuje duže, a opis aplikacije je proširen."],
-      ["Promena", "Peščanik: samo naslovi i uvod, jer sajt ne dozvoljava preuzimanje teksta."]
+      [
+        "Novo",
+        "Ukratko: najvažnije vesti iz poslednja 24 sata, sa po dve rečenice, na jednom ekranu."
+      ],
+      [
+        "Novo",
+        "Kako ko piše: u vesti koju prenosi više medija vidi se naslov i prva rečenica svakog medija, jedan ispod drugog."
+      ],
+      [
+        "Novo",
+        "Podeli vest preko Vibera, WhatsAppa, e-pošte ili LinkedIna: naslov, kratak opis i link na ceo tekst kod izvora."
+      ],
+      [
+        "Novo",
+        "Automatska provera izvora: ako neki portal prestane da radi, stiže obaveštenje, a kada proradi, obaveštenje se zatvara samo."
+      ],
+      [
+        "Promena",
+        "Početni ekran se prikazuje duže, a opis aplikacije je proširen."
+      ],
+      [
+        "Promena",
+        "Peščanik: samo naslovi i uvod, jer sajt ne dozvoljava preuzimanje teksta."
+      ]
     ]
   },
   {
@@ -55,11 +151,26 @@
     "date": "26. 11. 2026.",
     "title": "Novo ime, logo i početni ekran",
     "items": [
-      ["Novo", "Ime Pametniji čitač vesti i novi logo: tri izvora koja se spajaju u jednu vest."],
-      ["Novo", "Početni ekran sa animacijom pri pokretanju aplikacije."],
-      ["Novo", "Podešavanja → O aplikaciji: opis, uputstvo i broj verzije."],
-      ["Ispravka", "Ista fotografija se više ne pojavljuje dva puta na vrhu članka."],
-      ["Ispravka", "Potpisi ispod fotografija (npr. Foto: ...) prikazuju se ispod slike."]
+      [
+        "Novo",
+        "Ime Pametniji čitač vesti i novi logo: tri izvora koja se spajaju u jednu vest."
+      ],
+      [
+        "Novo",
+        "Početni ekran sa animacijom pri pokretanju aplikacije."
+      ],
+      [
+        "Novo",
+        "Podešavanja → O aplikaciji: opis, uputstvo i broj verzije."
+      ],
+      [
+        "Ispravka",
+        "Ista fotografija se više ne pojavljuje dva puta na vrhu članka."
+      ],
+      [
+        "Ispravka",
+        "Potpisi ispod fotografija (npr. Foto: ...) prikazuju se ispod slike."
+      ]
     ]
   },
   {
@@ -67,10 +178,22 @@
     "date": "26. 11. 2026.",
     "title": "Redovno ažuriranje i lakša instalacija",
     "items": [
-      ["Promena", "Vesti se pouzdano osvežavaju svakih 30 minuta."],
-      ["Novo", "Dugme ↻ pokreće novo prikupljanje vesti ako su starije od 5 minuta (oko 2 minuta)."],
-      ["Ispravka", "Link sa lozinkom radi i kada se otvori u Viberu ili WhatsAppu, pa prebaci u Chrome ili doda na početni ekran iPhone-a."],
-      ["Novo", "Polje za lozinku prihvata i ceo link koji si dobio."]
+      [
+        "Promena",
+        "Vesti se pouzdano osvežavaju svakih 30 minuta."
+      ],
+      [
+        "Novo",
+        "Dugme ↻ pokreće novo prikupljanje vesti ako su starije od 5 minuta (oko 2 minuta)."
+      ],
+      [
+        "Ispravka",
+        "Link sa lozinkom radi i kada se otvori u Viberu ili WhatsAppu, pa prebaci u Chrome ili doda na početni ekran iPhone-a."
+      ],
+      [
+        "Novo",
+        "Polje za lozinku prihvata i ceo link koji si dobio."
+      ]
     ]
   },
   {
@@ -78,9 +201,18 @@
     "date": "26. 11. 2026.",
     "title": "Instalacija i deljenje aplikacije",
     "items": [
-      ["Novo", "Dugme Instaliraj: aplikacija dobija ikonicu na telefonu i otvara se bez pregledača. Uputstvo za iPhone."],
-      ["Novo", "Pošalji link porodici i prijateljima: link sam otključava aplikaciju."],
-      ["Novo", "Anonimna statistika korišćenja (broj otvaranja i instalacija), bez ličnih podataka."]
+      [
+        "Novo",
+        "Dugme Instaliraj: aplikacija dobija ikonicu na telefonu i otvara se bez pregledača. Uputstvo za iPhone."
+      ],
+      [
+        "Novo",
+        "Pošalji link porodici i prijateljima: link sam otključava aplikaciju."
+      ],
+      [
+        "Novo",
+        "Anonimna statistika korišćenja (broj otvaranja i instalacija), bez ličnih podataka."
+      ]
     ]
   },
   {
@@ -88,9 +220,18 @@
     "date": "26. 11. 2026.",
     "title": "21 izvor",
     "items": [
-      ["Novo", "Novi izvori: RTS, BBC na srpskom, Slobodna Evropa, Vreme, Radar, Insajder, KRIK, BIRN, CINS, 021.rs, Južne vesti, Peščanik, Beta i FoNet."],
-      ["Novo", "Kategorije Istraživanja i Mišljenja."],
-      ["Promena", "Izvori koji retko objavljuju (istraživačke redakcije) čuvaju se 14 dana."]
+      [
+        "Novo",
+        "Novi izvori: RTS, BBC na srpskom, Slobodna Evropa, Vreme, Radar, Insajder, KRIK, BIRN, CINS, 021.rs, Južne vesti, Peščanik, Beta i FoNet."
+      ],
+      [
+        "Novo",
+        "Kategorije Istraživanja i Mišljenja."
+      ],
+      [
+        "Promena",
+        "Izvori koji retko objavljuju (istraživačke redakcije) čuvaju se 14 dana."
+      ]
     ]
   },
   {
@@ -98,9 +239,18 @@
     "date": "26. 11. 2026.",
     "title": "Kategorije i prevlačenje",
     "items": [
-      ["Novo", "Kategorije: Srbija, Politika, Svet, Region, Ekonomija, Hronika, Sport, Kultura, Tehnologija, Magazin."],
-      ["Novo", "U članku prevuci levo ili desno za sledeću ili prethodnu vest, ili koristi dugmad na dnu."],
-      ["Promena", "Oštrije fotografije: aplikacija uzima najveću verziju slike sa sajta."]
+      [
+        "Novo",
+        "Kategorije: Srbija, Politika, Svet, Region, Ekonomija, Hronika, Sport, Kultura, Tehnologija, Magazin."
+      ],
+      [
+        "Novo",
+        "U članku prevuci levo ili desno za sledeću ili prethodnu vest, ili koristi dugmad na dnu."
+      ],
+      [
+        "Promena",
+        "Oštrije fotografije: aplikacija uzima najveću verziju slike sa sajta."
+      ]
     ]
   },
   {
@@ -108,9 +258,18 @@
     "date": "26. 11. 2026.",
     "title": "Čistiji čitač i novi izgled",
     "items": [
-      ["Ispravka", "Iz članaka su uklonjeni oglasi, blokovi Možda vas zanima, galerije i duple fotografije."],
-      ["Novo", "Novi izgled sa fontom Inter, kartice sa sličicama i glavna vest sa velikom fotografijom."],
-      ["Novo", "Tamna tema, veličina teksta i prikaz svega latinicom."]
+      [
+        "Ispravka",
+        "Iz članaka su uklonjeni oglasi, blokovi Možda vas zanima, galerije i duple fotografije."
+      ],
+      [
+        "Novo",
+        "Novi izgled sa fontom Inter, kartice sa sličicama i glavna vest sa velikom fotografijom."
+      ],
+      [
+        "Novo",
+        "Tamna tema, veličina teksta i prikaz svega latinicom."
+      ]
     ]
   },
   {
@@ -118,10 +277,22 @@
     "date": "26. 11. 2026.",
     "title": "Prva verzija",
     "items": [
-      ["Novo", "Vesti iz N1, Nova, Danas, B92, Politika, Blic i Forbes Srbija na jednom mestu, bez reklama."],
-      ["Novo", "Ista vest iz više medija spaja se u jednu karticu."],
-      ["Novo", "Čitač članaka bez reklama, sa linkom na original."],
-      ["Novo", "Najvažnije i Najnovije, offline čitanje, zaštita lozinkom."]
+      [
+        "Novo",
+        "Vesti iz N1, Nova, Danas, B92, Politika, Blic i Forbes Srbija na jednom mestu, bez reklama."
+      ],
+      [
+        "Novo",
+        "Ista vest iz više medija spaja se u jednu karticu."
+      ],
+      [
+        "Novo",
+        "Čitač članaka bez reklama, sa linkom na original."
+      ],
+      [
+        "Novo",
+        "Najvažnije i Najnovije, offline čitanje, zaštita lozinkom."
+      ]
     ]
   }
 ]
