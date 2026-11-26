@@ -32,7 +32,7 @@ function cosine(a, b) {
 export function threadClusters(items, clusters, opts = {}) {
   const windowMs = (opts.windowHours ?? 72) * 3600e3;
   const threshold = opts.threshold ?? 0.15;
-  const maxSize = opts.maxSize ?? 8;
+  const maxSize = opts.maxSize ?? 6;
 
   // Words ever seen lowercase are ordinary words, not names.
   const lowerSeen = new Set();
@@ -41,6 +41,7 @@ export function threadClusters(items, clusters, opts = {}) {
   const info = clusters.map((c) => {
     const tf = new Map();
     const names = new Set();
+    const pairs = new Set();
     for (const id of c.items) {
       const it = items.get(id);
       if (!it) continue;
@@ -50,9 +51,16 @@ export function threadClusters(items, clusters, opts = {}) {
       add(tokens(it.title), 2);
       add(tokens(slugWords(it.url)), 1.5);
       add(tokens(it.lead).slice(0, 45), 1);
-      for (const { t, cap } of casedTokens(it.title)) if (cap && !lowerSeen.has(t) && t.length >= 4) names.add(t);
+      // Names: capitalized words never seen lowercase. Full names ("Pavle Bihali") also as pairs.
+      const ct = [...casedTokens(it.title), ...casedTokens((it.lead || '').slice(0, 300))];
+      for (let i = 0; i < ct.length; i++) {
+        const isName = (x) => x && x.cap && !lowerSeen.has(x.t) && x.t.length >= 3;
+        if (!isName(ct[i])) continue;
+        if (ct[i].t.length >= 4) names.add(ct[i].t);
+        if (isName(ct[i + 1])) pairs.add(ct[i].t + '_' + ct[i + 1].t);
+      }
     }
-    return { c, tf, names };
+    return { c, tf, names, pairs };
   });
 
   // Cluster frequency of names and of all terms.
@@ -60,6 +68,7 @@ export function threadClusters(items, clusters, opts = {}) {
   const df = new Map();
   for (const x of info) {
     for (const n of x.names) cf.set(n, (cf.get(n) || 0) + 1);
+    for (const n of x.pairs) cf.set(n, (cf.get(n) || 0) + 1);
     for (const k of x.tf.keys()) df.set(k, (df.get(k) || 0) + 1);
   }
   const N = info.length || 1;
@@ -68,7 +77,11 @@ export function threadClusters(items, clusters, opts = {}) {
     const v = new Map();
     for (const [k, w] of x.tf) v.set(k, w * Math.log(1 + N / df.get(k)));
     x.vec = normalize(v);
-    x.rare = new Set([...x.names].filter((n) => cf.get(n) >= 2 && cf.get(n) <= rareMax));
+    // Anchors: a full name seen in a few stories, or a single name seen in at most 3.
+    x.rare = new Set([
+      ...[...x.pairs].filter((n) => cf.get(n) >= 2 && cf.get(n) <= rareMax),
+      ...[...x.names].filter((n) => cf.get(n) >= 2 && cf.get(n) <= 3),
+    ]);
   }
 
   info.sort((a, b) => a.c.first - b.c.first);

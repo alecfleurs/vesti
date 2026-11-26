@@ -93,6 +93,6 @@
   "threads": {
     "threshold": 0.15,
     "windowHours": 72,
-    "maxSize": 8
+    "maxSize": 6
   }
 }
