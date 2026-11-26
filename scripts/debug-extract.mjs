@@ -45,6 +45,7 @@ for (const f of (await readdir('sources')).filter((f) => f.endsWith('.json'))) {
   const pick = titleRe ? items.filter((i) => titleRe.test(i.title)) : items.filter((i) => !/\/(english|sport|video)\//.test(i.url)).slice(0, per);
   for (const it of pick) {
     console.log(`\n=== ${id}: ${it.title}\n    ${it.url}`);
+    console.log(`    feedFullText=${it.full ? it.full.replace(/<[^>]+>/g, ' ').trim().split(/\s+/).length + ' words' : 'none'} lead=${(it.lead || '').length} chars`);
     try {
       const a = await extractArticle(it.url);
       const outline = a.html
