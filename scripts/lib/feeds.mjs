@@ -95,12 +95,16 @@ export function parseFeed(xml, base) {
       /<img[^>]+src=["']([^"']+)["']/i.exec(decodeEntities(tag(b, 'content:encoded')))?.[1] ||
       '';
     image = image ? absolute(decodeEntities(image), base) : '';
+    const cats = [...b.matchAll(/<category(?:\s[^>]*)?>([\s\S]*?)<\/category>/gi)].map((m) => stripHtml(unCdata(m[1]))).filter(Boolean);
+    const term = attr(b, 'category', 'term');
+    if (term) cats.push(term);
     items.push({
       title,
       url: link,
       time: Number.isFinite(time) ? time : null,
       lead: stripHtml(descHtml),
       image,
+      cats: cats.slice(0, 6),
     });
   }
   return items;

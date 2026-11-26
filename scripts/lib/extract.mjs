@@ -5,7 +5,7 @@ import { Readability } from '@mozilla/readability';
 import { fetchText } from './feeds.mjs';
 import { preClean, postClean } from './clean.mjs';
 
-export const EXTRACT_VERSION = 3;
+export const EXTRACT_VERSION = 4;
 
 const quiet = new VirtualConsole(); // swallow CSS/script parse noise from news pages
 
@@ -18,11 +18,29 @@ const DROP = new Set([
   'OBJECT', 'EMBED', 'VIDEO', 'AUDIO', 'CANVAS', 'ASIDE', 'NAV', 'FOOTER',
 ]);
 
+// Largest candidate from a srcset, capped so phones don't pull 4K originals.
+function bestFromSrcset(srcset) {
+  let best = null;
+  for (const part of srcset.split(/,\s+(?=\S)/)) {
+    const [url, desc = ''] = part.trim().split(/\s+/);
+    const w = /^(\d+)w$/.test(desc) ? +desc.slice(0, -1) : /^(\d(\.\d+)?)x$/.test(desc) ? parseFloat(desc) * 800 : 1;
+    if (!url || w > 2000) continue;
+    if (!best || w > best.w) best = { url, w };
+  }
+  return best?.url;
+}
+
 function fixLazyImages(doc) {
   for (const img of doc.querySelectorAll('img')) {
+    const set = img.getAttribute('data-srcset') || img.getAttribute('srcset') || img.closest('picture')?.querySelector('source[srcset]')?.getAttribute('srcset');
+    const big = set && bestFromSrcset(set);
+    if (big && !big.startsWith('data:')) {
+      img.setAttribute('src', big);
+      continue;
+    }
     const lazy =
       img.getAttribute('data-src') || img.getAttribute('data-lazy-src') || img.getAttribute('data-original') ||
-      img.getAttribute('data-srcset')?.split(/\s+/)[0];
+      null;
     const src = img.getAttribute('src') || '';
     if (lazy && (!src || src.startsWith('data:') || /placeholder|blank|lazy/i.test(src))) img.setAttribute('src', lazy);
   }

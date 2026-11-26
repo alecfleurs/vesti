@@ -10,7 +10,7 @@ import path from 'node:path';
 import { loadSource } from './lib/feeds.mjs';
 import { clusterItems } from './lib/cluster.mjs';
 import { deriveKey, encryptJson, randomSalt, ITERATIONS } from './lib/crypto.mjs';
-import { truncate } from './lib/text.mjs';
+import { truncate, fold } from './lib/text.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const CACHE = path.join(ROOT, '.cache');
@@ -27,6 +27,18 @@ if (!key || key.length < 8) {
 
 const config = JSON.parse(await readFile(path.join(ROOT, 'config.json'), 'utf8'));
 const globalExclude = (config.exclude || []).map((r) => new RegExp(r, 'i'));
+const catRules = (config.categories || []).map((c) => ({ name: c.name, re: new RegExp(c.match, 'i') }));
+const slug = (t) => '/' + fold(t).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '/';
+// URL section first, then the feed's own category tags, then the source default.
+function categorize(it, src) {
+  let path = '';
+  try {
+    path = new URL(it.url).pathname.toLowerCase();
+  } catch {}
+  for (const r of catRules) if (r.re.test(path)) return r.name;
+  for (const c of it.cats || []) for (const r of catRules) if (r.re.test(slug(c))) return r.name;
+  return src?.category || 'Ostalo';
+}
 
 // ---------- sources ----------
 const sources = [];
@@ -93,11 +105,12 @@ await Promise.all(
         prev.title = raw.title || prev.title;
         if (raw.lead) prev.lead = raw.lead;
         if (raw.image) prev.image = raw.image;
+        if (raw.cats?.length) prev.cats = raw.cats;
         continue;
       }
       state.items[id] = {
         id, source: src.id, url, title: raw.title, lead: raw.lead || '', image: raw.image || '',
-        published: raw.time, firstSeen: now,
+        published: raw.time, firstSeen: now, cats: raw.cats || [],
       };
       added++;
     }
@@ -152,6 +165,7 @@ if (extractArticle) {
           it.ev = EV;
           it.words = a.words;
           if (!it.lead && a.excerpt) it.lead = a.excerpt;
+          if (a.image) it.hi = a.image;
           if (!it.image && a.image) it.image = a.image;
           if (!it.published && a.published) it.published = a.published;
           delete it.fail;
@@ -167,7 +181,20 @@ if (extractArticle) {
   log(`extracted ${ok}, failed ${bad}, queued ${due.length}`);
 }
 
-// ---------- 4. cluster ----------
+// ---------- 4. categorize + cluster ----------
+const srcMap = Object.fromEntries(sources.map((s) => [s.id, s]));
+const catLog = {};
+for (const it of Object.values(state.items)) {
+  it.cat = categorize(it, srcMap[it.source]);
+  const l = (catLog[it.source] ||= { counts: {}, other: [] });
+  l.counts[it.cat] = (l.counts[it.cat] || 0) + 1;
+  if (it.cat === 'Ostalo' && l.other.length < 3) l.other.push(new URL(it.url).pathname.slice(0, 70) + (it.cats?.length ? ` [${it.cats.join(', ')}]` : ''));
+}
+for (const [id, l] of Object.entries(catLog)) {
+  log(`cat ${id.padEnd(10)} ${Object.entries(l.counts).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}:${v}`).join(' ')}`);
+  for (const o of l.other) log(`    ostalo: ${o}`);
+}
+
 const all = Object.values(state.items).map((it) => ({ ...it, time: itemTime(it) }));
 const clusters = clusterItems(all, config.cluster || {}).sort((a, b) => b.last - a.last);
 log(`clusters: ${clusters.length} from ${all.length} items (${clusters.filter((c) => c.sources > 1).length} multi-source)`);
@@ -184,12 +211,13 @@ const index = {
   generated: now,
   title: config.title || 'Vesti',
   repo: process.env.GITHUB_REPOSITORY || config.repo || '',
+  categories: catRules.map((r) => r.name).concat('Ostalo'),
   sources: sources.map((s) => ({
     id: s.id, name: s.name, home: s.home || '', color: s.color || '', ...state.sources[s.id],
   })),
   items: Object.fromEntries(
     all.map((it) => [it.id, {
-      s: it.source, t: it.title, u: it.url, p: it.time, l: truncate(it.lead, 260), i: it.image || '',
+      s: it.source, t: it.title, u: it.url, p: it.time, l: truncate(it.lead, 260), i: it.image || '', h: it.hi || '', c: it.cat,
       x: it.x ? 1 : 0, w: it.words || 0,
     }]),
   ),

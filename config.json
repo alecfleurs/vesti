@@ -4,7 +4,15 @@
   "extractHours": 48,
   "maxItemsPerSource": 80,
   "maxExtractPerRun": 300,
-  "sourceOrder": ["n1", "nova", "danas", "b92", "politika", "blic", "forbes-n1"],
+  "sourceOrder": [
+    "n1",
+    "nova",
+    "danas",
+    "b92",
+    "politika",
+    "blic",
+    "forbes-n1"
+  ],
   "exclude": [
     "/(zabava|showbiz|show-biz|horoskop|astro|rijaliti|zvezde|tracevi|lifestyle|superzena|kviz|igrice)(/|$)",
     "/(najave-emisija|video/dnevnik|video/dan-uzivo)(/|$)"
@@ -14,5 +22,47 @@
     "strongThreshold": 0.5,
     "windowHours": 36,
     "minShared": 2
-  }
+  },
+  "categories": [
+    {
+      "name": "Sport",
+      "match": "(^|/)(sport|sportski|fudbal|kosarka|tenis|odbojka|vaterpolo|rukomet|atletika|formula-1|sampionska-liga|superliga)(/|$)"
+    },
+    {
+      "name": "Hronika",
+      "match": "(^|/)(hronika|crna-hronika|crna|policija|sudstvo)(/|$)"
+    },
+    {
+      "name": "Svet",
+      "match": "(^|/)(svet|world|planeta|globus|evropa|sad|rusija|ukrajina|bliski-istok)(/|$)"
+    },
+    {
+      "name": "Region",
+      "match": "(^|/)(region|regija|ex-?yu|bih|crna-gora|hrvatska|republika-srpska|severna-makedonija|slovenija)(/|$)"
+    },
+    {
+      "name": "Ekonomija",
+      "match": "(^|/)(ekonomija|biznis|biz|privreda|finansije|novac|moj-novcanik|investicije|berza|preduzetnistvo|karijere|nekretnine|kompanije|energetika)(/|$)"
+    },
+    {
+      "name": "Politika",
+      "match": "(^|/)(politika|izbori)(/|$)"
+    },
+    {
+      "name": "Kultura",
+      "match": "(^|/)(kultura|scena|film|muzika|knjige|knjizevnost|umetnost|pozoriste|kultura-i-umetnost)(/|$)"
+    },
+    {
+      "name": "Tehnologija",
+      "match": "(^|/)(tehnologija|tehnologije|tech|nauka|inovacije|digitalni|it|nauka-i-tehnologija)(/|$)"
+    },
+    {
+      "name": "Magazin",
+      "match": "(^|/)(magazin|zdravlje|lifestyle|zivot|putovanja|hrana|kuhinja|auto|automobili|vremenska-prognoza|vreme|zanimljivosti|razno)(/|$)"
+    },
+    {
+      "name": "Srbija",
+      "match": "(^|/)(srbija|drustvo|beograd|novi-sad|nis|kragujevac|gradovi|lokal|dogadjaji|vesti|info|obrazovanje|vojvodina)(/|$)"
+    }
+  ]
 }
