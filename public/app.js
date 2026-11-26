@@ -37,7 +37,23 @@ const S = {
   lastLoad: 0,
 };
 
+const APP_VERSION = '1.6';
+const APP_BUILD = '__BUILD__'; // replaced at build time with commit + date
+
 const app = document.getElementById('app');
+
+// Splash: stays at least ~1.1 s (so the animation can finish), then fades once the first screen is drawn.
+const splashStart = performance.now();
+function hideSplash() {
+  const el = document.getElementById('splash');
+  if (!el || el.classList.contains('gone')) return;
+  const wait = Math.max(0, 1100 - (performance.now() - splashStart));
+  setTimeout(() => {
+    el.classList.add('gone');
+    setTimeout(() => el.remove(), 400);
+  }, wait);
+}
+setTimeout(hideSplash, 8000); // never block the app if something goes wrong
 
 /* ---------- usage stats (GoatCounter) ---------- */
 // Pageviews count devices (GoatCounter dedupes visitors per day); events count actions.
@@ -202,6 +218,7 @@ async function load(pass) {
     if (S.index) toast('Nema veze. Prikazujem sačuvane vesti.');
     else app.innerHTML = `<div class="wrap"><p class="empty">Vesti trenutno nisu dostupne.<br><small>${esc(e.message)}</small></p>
       <button class="more" onclick="location.reload()">Pokušaj ponovo</button></div>`;
+    hideSplash();
   } finally {
     S.loading = false;
     document.querySelector('[data-act="refresh"]')?.classList.remove('spin');
@@ -264,6 +281,7 @@ const imgKey = (src) => {
   try {
     return new URL(src, location.href).pathname.split('/').pop().split('.')[0]
       .replace(/^\d{2,4}z\d{2,4}_(cb_)?/i, '')
+      .replace(/-e\d{10,13}(?=-|$)/i, '')
       .replace(/[-_](\d{2,4}x\d{2,4}|scaled|thumb|large|medium|small|w\d+|h\d+)$/i, '')
       .replace(/[-_]\d{2,4}x\d{2,4}/i, '')
       .toLowerCase();
@@ -339,6 +357,7 @@ function renderList() {
       ${list.length > S.limit ? `<button class="more" data-act="more">Prikaži još (${list.length - S.limit})</button>` : ''}
       <p class="foot">${Object.keys(idx.items).length} članaka iz ${idx.sources.length} izvora, spojeno u ${idx.clusters.length} vesti</p>
     </main>`;
+  hideSplash();
   requestAnimationFrame(() => {
     window.scrollTo(0, S.listScroll);
     const card = S.lastStory && S.lastStory !== S.leftFrom && document.querySelector(`.card[data-id="${S.lastStory}"]`);
@@ -425,8 +444,16 @@ async function renderArticle(itemId, clusterId) {
     latinizeNode(body);
     // Lead image: skip it when the article already opens with a picture or contains the same one.
     const hero = a.image || bigImg(it);
-    const first = [...body.children].find((el) => el.textContent.trim() || el.querySelector('img') || el.tagName === 'IMG');
-    const opensWithImage = first && (first.tagName === 'IMG' || first.tagName === 'FIGURE' || (!first.textContent.trim() && first.querySelector('img')));
+    // Any picture before the first real paragraph means the article brings its own lead image.
+    let first = null;
+    for (const el of body.children) {
+      if (el.tagName === 'IMG' || el.querySelector('img')) {
+        first = el;
+        break;
+      }
+      if (el.textContent.trim().length > 80) break;
+    }
+    const opensWithImage = !!first;
     const contains = hero && [...body.querySelectorAll('img')].some((im) => imgKey(im.getAttribute('src')) === imgKey(hero));
     box.innerHTML = hero && !opensWithImage && !contains ? heroTag(hero) : '';
     if (opensWithImage) first.classList.add('first-media');
@@ -502,7 +529,22 @@ function renderSettings() {
         <a class="row" href="https://github.com/${esc(repo)}/actions/workflows/update.yml" target="_blank" rel="noopener"><div class="grow">Ažuriraj odmah<div class="hint">Run workflow na GitHub Actions</div></div>${I.ext}</a>` : ''}
         <button class="row" data-act="logout"><div class="grow">Zaboravi lozinku na ovom uređaju</div></button>
       </section>
-      <p class="foot">Poslednje ažuriranje: ${new Date(idx.generated).toLocaleString('sr-Latn-RS')}</p>
+      <div class="panel-label">O aplikaciji</div>
+      <section class="panel about">
+        <div class="about-head"><img src="icon.svg" alt="" width="52" height="52">
+          <div><b>Pametniji čitač vesti</b><span>Verzija ${APP_VERSION}${APP_BUILD.startsWith('__') ? '' : ` · ${esc(APP_BUILD)}`}</span></div></div>
+        <p>Vesti iz ${idx.sources.length} srpskih medija na jednom mestu, bez reklama. Kada više portala piše o istom događaju, priče se spajaju u jednu, pa svaku vest vidiš samo jednom. Nove vesti stižu svakih 30 minuta.</p>
+        <ul>
+          <li><b>Najvažnije</b> su priče koje prenosi najviše medija, <b>Najnovije</b> su poređane po vremenu.</li>
+          <li><b>Kategorije</b> ispod kartica filtriraju vesti po temi.</li>
+          <li>Oznaka <span class="stack-ex"><i></i><i></i><i></i></span> <b>3 izvora</b> znači da vest prenose tri medija. Ostale verzije su na dnu članka.</li>
+          <li>U članku <b>prevuci levo ili desno</b> za sledeću ili prethodnu vest.</li>
+          <li><b>Original</b> otvara članak na sajtu izvora.</li>
+          <li><b>↻</b> preuzima najnovije vesti. Ako su starije od 5 minuta, pokreće novo prikupljanje (oko 2 minuta).</li>
+        </ul>
+        <p class="hint">Tekstovi i fotografije pripadaju izdavačima. Aplikacija je namenjena ličnoj upotrebi i uvek vodi na originalni članak.</p>
+      </section>
+      <p class="foot">Poslednje ažuriranje vesti: ${new Date(idx.generated).toLocaleString('sr-Latn-RS')}</p>
     </main>`;
 
   const name = $('#ns-name'), home = $('#ns-home'), feed = $('#ns-feed'), go = $('#ns-go');
@@ -529,6 +571,7 @@ function renderUnlock(err = '') {
     <label class="show-pass"><input type="checkbox" id="showpass"> Prikaži</label>
     <div class="err">${esc(err)}</div>
     <button class="primary" type="submit">Otključaj</button></form></main>`;
+  hideSplash();
   $('#showpass').addEventListener('change', (e) => ($('#pass').type = e.target.checked ? 'text' : 'password'));
   $('#unlock').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -672,6 +715,7 @@ function route() {
   }
   current = h;
   const parts = h.slice(2).split('/');
+  hideSplash();
   if (parts[0] === 'a' && parts[1]) return renderArticle(parts[1], parts[2]);
   if (parts[0] === 'settings') return renderSettings();
   renderList();
@@ -907,7 +951,6 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catc
 if (!('DecompressionStream' in window) || !crypto.subtle) {
   app.innerHTML = '<p class="empty">Ovaj pregledač je prestar za aplikaciju.</p>';
 } else {
-  app.innerHTML = '<p class="empty">Učitavam…</p>';
   const linkPass = takeLinkPassword();
   S.fromLink = !!linkPass;
   if (linkPass && linkPass !== store.get('pass')) store.del('key'); // a different password in the link wins

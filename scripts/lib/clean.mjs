@@ -95,6 +95,7 @@ function imageKey(src) {
     const file = (u.pathname.split('/').pop() || '').split('.')[0];
     return file
       .replace(/^\d{2,4}z\d{2,4}_(cb_)?/i, '')
+      .replace(/-e\d{10,13}(?=-|$)/i, '') // WordPress image-edit stamp
       .replace(/[-_](\d{2,4}x\d{2,4}|scaled|thumb|large|medium|small|w\d+|h\d+)$/i, '')
       .replace(/[-_]\d{2,4}x\d{2,4}/i, '')
       .toLowerCase();
@@ -108,7 +109,19 @@ const BLOCK = new Set(['P', 'H2', 'H3', 'H4', 'UL', 'OL', 'BLOCKQUOTE', 'FIGURE'
 
 /** Tidy an already-sanitized article body (whitelisted tags only). Mutates root. */
 export function postClean(root, doc) {
-  // Teaser cards: links wrapping headings, paragraphs or images point to other articles.
+  // <p><img>Foto: X</p> -> <figure><img><figcaption>Foto: X</figcaption></figure>
+  for (const p of [...root.querySelectorAll('p')]) {
+    const imgs = p.querySelectorAll('img');
+    const text = p.textContent.replace(/\s+/g, ' ').trim();
+    if (imgs.length !== 1 || !text || text.length > 140) continue;
+    const fig = doc.createElement('figure');
+    fig.appendChild(imgs[0]);
+    const cap = doc.createElement('figcaption');
+    cap.textContent = text;
+    fig.appendChild(cap);
+    p.replaceWith(fig);
+  }
+    // Teaser cards: links wrapping headings, paragraphs or images point to other articles.
   for (const a of [...root.querySelectorAll('a')]) {
     if (!root.contains(a)) continue;
     if (a.querySelector('h1, h2, h3, h4, p, figure, ul, ol, blockquote')) a.remove();
@@ -167,7 +180,7 @@ export function postClean(root, doc) {
         next.remove();
         next = n;
       }
-    } else if (t.length < 120 && JUNK_LINE.test(t)) el.remove();
+    } else if (el.tagName !== 'FIGCAPTION' && t.length < 120 && JUNK_LINE.test(t)) el.remove();
     else if (el.tagName !== 'LI' && isLinkOnly(el) && !/[.!?]$/.test(t)) el.remove();
   }
   // Lists left with only links (related article lists).

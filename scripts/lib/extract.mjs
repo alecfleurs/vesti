@@ -5,7 +5,7 @@ import { Readability } from '@mozilla/readability';
 import { fetchText } from './feeds.mjs';
 import { preClean, postClean } from './clean.mjs';
 
-export const EXTRACT_VERSION = 5;
+export const EXTRACT_VERSION = 6;
 
 const quiet = new VirtualConsole(); // swallow CSS/script parse noise from news pages
 

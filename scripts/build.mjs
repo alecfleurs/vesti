@@ -256,6 +256,13 @@ log(`clusters: ${clusters.length} from ${all.length} items (${clusters.filter((c
 // ---------- 5. write site ----------
 await rm(DIST, { recursive: true, force: true });
 await cp(path.join(ROOT, 'public'), DIST, { recursive: true });
+{
+  // Stamp the build into the app (commit + date) for the About section.
+  const sha = (process.env.GITHUB_SHA || '').slice(0, 7) || 'local';
+  const stamp = `${sha} · ${new Date().toLocaleDateString('sr-Latn-RS', { timeZone: 'Europe/Belgrade' })}`;
+  const appJs = path.join(DIST, 'app.js');
+  await writeFile(appJs, (await readFile(appJs, 'utf8')).replace("'__BUILD__'", JSON.stringify(stamp)));
+}
 await mkdir(path.join(DIST, 'data', 'a'), { recursive: true });
 await writeFile(path.join(DIST, '.nojekyll'), '');
 
