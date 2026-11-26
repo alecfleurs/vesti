@@ -5,5 +5,6 @@
     "https://www.krik.rs/feed/"
   ],
   "category": "Istraživanja",
-  "color": "#c62828"
+  "color": "#c62828",
+  "retainHours": 336
 }

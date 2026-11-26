@@ -113,7 +113,7 @@ await Promise.all(
       }
       const p = new URL(url).pathname;
       if (src.exclude.some((r) => r.test(url)) || globalExclude.some((r) => r.test(p))) continue;
-      if (raw.time && raw.time < now - config.retainHours * 3600e3) continue;
+      if (raw.time && raw.time < now - (src.retainHours || config.retainHours) * 3600e3) continue;
       kept++;
       const id = idOf(url);
       const prev = state.items[id];
@@ -151,7 +151,7 @@ for (const [id, it] of Object.entries(state.items)) {
     }
   })();
   const excluded = src && (src.exclude.some((r) => r.test(it.url)) || globalExclude.some((r) => r.test(urlPath)));
-  if (!active.has(it.source) || excluded || itemTime(it) < now - config.retainHours * 3600e3) {
+  if (!active.has(it.source) || excluded || itemTime(it) < now - (src?.retainHours || config.retainHours) * 3600e3) {
     delete state.items[id];
     await rm(path.join(ART, `${id}.json`), { force: true });
     pruned++;
@@ -177,7 +177,10 @@ if (extractArticle) {
   }
   const due = Object.values(state.items)
     // Missing bodies first, then bodies made by an older version of the cleaner.
-    .filter((it) => (!it.x || it.ev !== EV) && itemTime(it) > now - config.extractHours * 3600e3)
+    .filter((it) => {
+      const hours = Math.max(config.extractHours, sources.find((x) => x.id === it.source)?.retainHours || 0);
+      return (!it.x || it.ev !== EV) && itemTime(it) > now - hours * 3600e3;
+    })
     .filter((it) => !it.fail || (it.fail < 3 && now - it.lastTry > 2 * 3600e3))
     .sort((a, b) => (a.x ? 1 : 0) - (b.x ? 1 : 0) || itemTime(b) - itemTime(a))
     .slice(0, config.maxExtractPerRun ?? 150);

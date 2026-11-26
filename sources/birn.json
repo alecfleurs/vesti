@@ -3,5 +3,6 @@
   "home": "https://birn.rs/",
   "feeds": [],
   "category": "Istraživanja",
-  "color": "#5d4037"
+  "color": "#5d4037",
+  "retainHours": 336
 }

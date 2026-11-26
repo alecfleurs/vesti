@@ -175,8 +175,12 @@ export async function loadSource(src, log = () => {}) {
     tried.add(url);
     try {
       const r = await fetchText(url, { accept: 'application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.5' });
-      if (!looksLikeFeed(r.text)) return null;
+      if (!looksLikeFeed(r.text)) {
+        errors.push(`${url}: not a feed (${(r.type || '?').split(';')[0]}, ${r.text.length} bytes)`);
+        return null;
+      }
       const items = parseFeed(r.text, r.url);
+      if (!items.length) errors.push(`${url}: feed has no items`);
       return items.length ? items : null;
     } catch (e) {
       errors.push(`${url}: ${e.message}`);
@@ -213,14 +217,14 @@ export async function loadSource(src, log = () => {}) {
     const items = await tryFeed(f);
     if (items) {
       log(`  discovered feed ${f}`);
-      return { items, mode: configured.length ? 'rss-discovered (configured feed failed)' : 'rss-discovered', feeds: [f] };
+      return { items, mode: 'rss-discovered', feeds: [f], error: errors.slice(0, 2).join(' | ') };
     }
   }
 
   // 4. Homepage scrape.
   if (home) {
     const items = scrapeHome(home.text, home.url);
-    if (items.length) return { items, mode: 'scrape', feeds: [] };
+    if (items.length) return { items, mode: 'scrape', feeds: [], error: errors.slice(0, 2).join(' | ') };
   }
   return { items: [], mode: 'failed', feeds: [], error: errors.slice(0, 3).join(' | ') || 'no feed or articles found' };
 }

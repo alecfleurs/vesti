@@ -219,7 +219,7 @@ function ranked() {
   if (S.tab === 'new') return list.sort((a, b) => b.l - a.l);
   const now = Date.now();
   return list
-    .filter((c) => now - c.l < 30 * 3600e3)
+    .filter((c) => now - c.l < (S.cat ? 14 * 24 : 30) * 3600e3)
     .map((c) => {
       const age = (now - c.l) / 3600e3;
       const score = (c.srcs.length + 0.25 * (c.items.length - c.srcs.length)) * Math.exp(-age / 14);
