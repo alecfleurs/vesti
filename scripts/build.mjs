@@ -210,6 +210,13 @@ if (extractArticle) {
   );
   log(`extracted ${ok}, failed ${bad}, queued ${due.length}`);
   for (const [k, n] of Object.entries(failures).sort((a, b) => b[1] - a[1]).slice(0, 8)) log(`    fail x${n} ${k}`);
+  const pending = {};
+  for (const it of Object.values(state.items)) {
+    if (it.x || !it.fail) continue;
+    const k = `${it.source}: ${String(it.err).replace(/\d{3,}/g, 'N').slice(0, 60)}`;
+    pending[k] = (pending[k] || 0) + 1;
+  }
+  for (const [k, n] of Object.entries(pending).sort((a, b) => b[1] - a[1]).slice(0, 8)) log(`    without text x${n} ${k}`);
 }
 
 // ---------- 4. categorize + cluster ----------
