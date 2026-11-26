@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
   pages: write
   id-token: write
 
@@ -44,6 +45,7 @@ jobs:
         env:
           NEWS_KEY: ${{ secrets.NEWS_KEY }}
           DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/build.mjs
 
       - name: Save state

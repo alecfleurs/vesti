@@ -11,6 +11,7 @@ import { loadSource } from './lib/feeds.mjs';
 import { clusterItems } from './lib/cluster.mjs';
 import { deriveKey, encryptJson, randomSalt, ITERATIONS } from './lib/crypto.mjs';
 import { truncate, fold } from './lib/text.mjs';
+import { findProblems, syncIssues } from './lib/health.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const CACHE = path.join(ROOT, '.cache');
@@ -133,6 +134,7 @@ await Promise.all(
     state.sources[src.id] = {
       mode: res.mode, feeds: res.feeds, count: kept, error: res.error || '', checked: now,
       ok: res.mode !== 'failed' ? now : state.sources[src.id]?.ok || 0,
+      since: state.sources[src.id]?.since || now,
     };
     log(`${src.id.padEnd(12)} ${res.mode.padEnd(14)} ${String(kept).padStart(3)} items, ${added} new  (${Date.now() - t0} ms)${res.error ? '  ' + res.error : ''}`);
   }),
@@ -306,6 +308,8 @@ await writeFile(
 );
 await writeFile(path.join(CACHE, 'state.json'), JSON.stringify(state));
 log(`wrote dist: index + ${bodies} articles`);
+
+await syncIssues(findProblems(sources, state, now), log);
 
 if (sources.length && sources.every((s) => state.sources[s.id]?.mode === 'failed')) {
   console.error('Every source failed. Network problem?');

@@ -37,17 +37,17 @@ const S = {
   lastLoad: 0,
 };
 
-const APP_VERSION = '1.6';
+const APP_VERSION = '1.7';
 const APP_BUILD = '__BUILD__'; // replaced at build time with commit + date
 
 const app = document.getElementById('app');
 
-// Splash: stays at least ~1.1 s (so the animation can finish), then fades once the first screen is drawn.
+// Splash: stays at least 2 s (animation plus a moment to read the name), then fades once the first screen is drawn.
 const splashStart = performance.now();
 function hideSplash() {
   const el = document.getElementById('splash');
   if (!el || el.classList.contains('gone')) return;
-  const wait = Math.max(0, 1100 - (performance.now() - splashStart));
+  const wait = Math.max(0, 2000 - (performance.now() - splashStart));
   setTimeout(() => {
     el.classList.add('gone');
     setTimeout(() => el.remove(), 400);
@@ -270,6 +270,39 @@ function ranked() {
 // Big image for heroes and lead cards; the feed image is often a small thumbnail.
 const bigImg = (it) => it.h || it.i || '';
 
+// First sentence or two of a lead, about 220 characters at most.
+function summarize(text, max = 220) {
+  if (!text) return '';
+  const t = String(text).replace(/\s+/g, ' ').trim();
+  const parts = t.split(/(?<=[.!?…])\s+(?=[„"«A-ZČĆŠŽĐА-ЯЂЈЉЊЋЏ0-9])/);
+  let out = '';
+  for (const p of parts) {
+    if (out && (out + ' ' + p).length > max) break;
+    out = out ? out + ' ' + p : p;
+    if (out.length > max * 0.6) break;
+  }
+  if (out.length > max + 40) out = out.slice(0, max).replace(/\s+\S*$/, '') + '…';
+  return out;
+}
+const bestLead = (c) => {
+  const leads = c.items.map((id) => S.index.items[id].l || '').filter(Boolean);
+  const rep = S.index.items[c.rep].l;
+  return rep && rep.length > 60 ? rep : leads.sort((a, b) => b.length - a.length)[0] || '';
+};
+
+// "Ukratko": the ten most covered stories of the last 24 hours, all categories.
+function briefing() {
+  const now = Date.now();
+  return viewClusters()
+    .filter((c) => now - c.l < 24 * 3600e3)
+    .map((c) => ({ c, score: (c.srcs.length + 0.25 * (c.items.length - c.srcs.length)) * Math.exp(-(now - c.l) / 3600e3 / 18) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 10)
+    .map((x) => x.c);
+}
+// Swipe / next-previous follow the screen the story was opened from.
+const storyOrder = () => (S.ctx === 'brief' ? briefing() : ranked());
+
 const isUnread = (c) => !S.read[c.id] || c.l > S.read[c.id] + 1000;
 
 /* ---------- views ---------- */
@@ -298,6 +331,50 @@ function sourceBadge(c, src) {
   const dots = c.srcs.slice(0, 4).map((id) => `<i style="--c:${esc(srcById(id).color || 'var(--faint)')}"></i>`).join('');
   return `<span class="src" style="--c:${esc(src.color)}">${esc(src.name)}</span>
     <span class="stack"><span class="dots">${dots}</span>${c.srcs.length} izvora</span>`;
+}
+
+function briefCard() {
+  const list = briefing();
+  if (list.length < 3) return '';
+  const unread = list.filter(isUnread).length;
+  const mins = Math.max(2, Math.round(list.length * 0.35));
+  return `<a class="brief-card${unread ? '' : ' done'}" href="#/brief">
+    <div class="bc-head"><span class="bc-badge">Ukratko</span><span>${unread ? `${unread} od ${list.length} nepročitano` : 'Sve pročitano'} · oko ${mins} min</span></div>
+    <div class="bc-title">Najvažnije u poslednja 24 sata</div>
+    <ol>${list.slice(0, 3).map((c) => `<li>${esc(lat(S.index.items[c.rep].t))}</li>`).join('')}</ol>
+    <span class="bc-go">Pročitaj ukratko →</span></a>`;
+}
+
+function renderBrief() {
+  const idx = S.index;
+  const list = briefing();
+  const now = new Date();
+  const day = now.toLocaleDateString('sr-Latn-RS', { weekday: 'long', day: 'numeric', month: 'long' });
+  app.innerHTML =
+    bar(`<a class="icon-btn" href="#/" aria-label="Nazad">${I.back}</a><span class="crumb"></span>`) +
+    `<main class="wrap brief">
+      <div class="brief-date">${esc(day.charAt(0).toUpperCase() + day.slice(1))}</div>
+      <h1 class="page-title">Ukratko</h1>
+      <p class="brief-sub">${list.length} najvažnijih vesti iz poslednja 24 sata, po tome koliko ih medija prenosi.</p>
+      <ol class="brief-list">${list
+        .map((c, i) => {
+          const it = idx.items[c.rep];
+          const dots = c.srcs.slice(0, 5).map((id) => `<i style="--c:${esc(srcById(id).color || 'var(--faint)')}"></i>`).join('');
+          return `<li class="${isUnread(c) ? '' : 'read'}" data-id="${c.id}"><a href="#/a/${c.rep}/${c.id}">
+            <span class="num">${i + 1}</span>
+            <div class="txt"><h2>${esc(lat(it.t))}</h2>
+              <p>${esc(lat(summarize(bestLead(c))))}</p>
+              <div class="meta"><span class="stack"><span class="dots">${dots}</span>${c.srcs.length > 1 ? `${c.srcs.length} izvora` : esc(srcById(it.s).name)}</span><span>${ago(c.l)}</span></div></div></a></li>`;
+        })
+        .join('')}</ol>
+      <button class="more" data-act="brief-done">Označi kao pročitano i nazad</button>
+    </main>`;
+  hideSplash();
+  requestAnimationFrame(() => {
+    const li = S.lastStory && document.querySelector(`.brief-list li[data-id="${S.lastStory}"]`);
+    if (li) li.scrollIntoView({ block: 'center' });
+    else window.scrollTo(0, 0);
+  });
 }
 
 function renderList() {
@@ -352,6 +429,7 @@ function renderList() {
         <button role="tab" data-tab="new" aria-selected="${S.tab === 'new'}">Najnovije</button>
       </div>
       ${chips}
+      ${S.tab === 'top' && !S.cat ? briefCard() : ''}
       <div class="list-tools"><span>${list.length} vesti</span><button class="link-btn" data-act="allread">Označi sve kao pročitano</button></div>
       ${shown.length ? `<ul class="list">${cards}</ul>` : '<p class="empty">Nema vesti za prikaz.</p>'}
       ${list.length > S.limit ? `<button class="more" data-act="more">Prikaži još (${list.length - S.limit})</button>` : ''}
@@ -367,6 +445,26 @@ function renderList() {
   });
 }
 
+// "Kako ko piše": every outlet's headline for the same story, collapsed under the title.
+function compareBlock(cluster, currentId) {
+  const ids = cluster.it.filter(visible).sort((a, b) => S.index.items[a].p - S.index.items[b].p);
+  const rows = ids
+    .map((id) => {
+      const o = S.index.items[id];
+      const os = srcById(o.s);
+      const here = id === currentId;
+      const first = summarize(o.l, 140);
+      const inner = `<div class="meta"><span class="src" style="--c:${esc(os.color)}">${esc(os.name)}</span><span>${ago(o.p)}</span>${here ? '<span class="here">čitaš</span>' : ''}</div>
+        <div class="t">${esc(lat(o.t))}</div>${first ? `<div class="l">${esc(lat(first))}</div>` : ''}`;
+      return here ? `<div class="cmp-row here">${inner}</div>` : `<a class="cmp-row" href="#/a/${id}/${cluster.id}">${inner}</a>`;
+    })
+    .join('');
+  return `<details class="compare"${S.prefs.compareOpen ? ' open' : ''}>
+    <summary><span class="stack"><span class="dots">${ids.slice(0, 5).map((id) => `<i style="--c:${esc(srcById(S.index.items[id].s).color || 'var(--faint)')}"></i>`).join('')}</span>Kako ko piše</span>
+      <span class="cmp-n">${ids.length} izvora</span><span class="chev">▾</span></summary>
+    <div class="cmp-list">${rows}</div></details>`;
+}
+
 async function renderArticle(itemId, clusterId) {
   const idx = S.index;
   const it = idx.items[itemId];
@@ -379,7 +477,7 @@ async function renderArticle(itemId, clusterId) {
   }
   const others = (cluster?.it || []).filter((id) => id !== itemId && visible(id));
   S.lastStory = cluster?.id || null;
-  const order = ranked();
+  const order = storyOrder();
   const pos = cluster ? order.findIndex((c) => c.id === cluster.id) : -1;
   const prev = pos > 0 ? order[pos - 1] : null;
   const next = pos >= 0 && pos < order.length - 1 ? order[pos + 1] : null;
@@ -397,20 +495,15 @@ async function renderArticle(itemId, clusterId) {
       `<a class="icon-btn" href="#/" data-act="back" aria-label="Nazad">${I.back}</a>
        <span class="crumb" data-idle="${pos >= 0 ? `${pos + 1} / ${order.length}` : ''}">${pos >= 0 ? `${pos + 1} / ${order.length}` : ''}</span>`,
       `<span class="size-ctl"><button data-act="smaller" aria-label="Manji tekst">A</button><button data-act="bigger" aria-label="Veći tekst">A</button></span>
+       <button class="icon-btn" data-act="share-article" aria-label="Podeli">${I.share}</button>
        <a class="pill-btn" href="${esc(it.u)}" target="_blank" rel="noopener noreferrer">Original ${I.ext}</a>`,
     ) +
     `<main class="wrap"><article class="reader${slide ? ' slide-' + slide : ''}">
       <div class="kicker"><span class="src" style="--c:${esc(src.color)}">${esc(src.name)}</span><span>${ago(it.p)}</span>
         ${it.w ? `<span>${Math.max(1, Math.round(it.w / 220))} min čitanja</span>` : ''}<span class="byline"></span></div>
       <h1>${esc(lat(it.t))}</h1>
+      ${others.length ? compareBlock(cluster, itemId) : ''}
       <div class="content">${it.x ? '<p class="notice">Učitavam…</p>' : ''}</div>
-      ${others.length ? `<section class="also"><h3>Ista vest, drugi izvori</h3><ul class="list">${others
-        .map((id) => {
-          const o = idx.items[id];
-          const os = srcById(o.s);
-          return `<li class="card"><a href="#/a/${id}/${cluster.id}"><div class="txt"><div class="meta"><span class="src" style="--c:${esc(os.color)}">${esc(os.name)}</span><span>${ago(o.p)}</span></div><h2>${esc(lat(o.t))}</h2></div>${S.prefs.thumbs !== false ? imgTag(o.i, 'thumb') : ''}</a></li>`;
-        })
-        .join('')}</ul></section>` : ''}
       ${prev || next ? `<nav class="story-nav">${navCard(prev, 'prev')}${navCard(next, 'next')}</nav>
         <p class="swipe-hint">Prevuci levo ili desno za sledeću vest</p>` : ''}
     </article></main>`;
@@ -533,14 +626,26 @@ function renderSettings() {
       <section class="panel about">
         <div class="about-head"><img src="icon.svg" alt="" width="52" height="52">
           <div><b>Pametniji čitač vesti</b><span>Verzija ${APP_VERSION}${APP_BUILD.startsWith('__') ? '' : ` · ${esc(APP_BUILD)}`}</span></div></div>
-        <p>Vesti iz ${idx.sources.length} srpskih medija na jednom mestu, bez reklama. Kada više portala piše o istom događaju, priče se spajaju u jednu, pa svaku vest vidiš samo jednom. Nove vesti stižu svakih 30 minuta.</p>
+        <p>Vesti iz ${idx.sources.length} srpskih medija na jednom mestu, bez reklama i bez ponavljanja. Za par minuta znaš šta je važno danas.</p>
+        <h3 class="about-h">Zašto je pametniji</h3>
+        <ul class="benefits">
+          <li><b>Bez reklama i iskačućih prozora.</b> Samo tekst i fotografije, bez kolačića i bez „pročitajte još“.</li>
+          <li><b>Svaka vest samo jednom.</b> Kada više medija piše o istom događaju, priče se spajaju u jednu karticu. Lista je skoro duplo kraća.</li>
+          <li><b>Svi važni mediji na jednom mestu.</b> Od dnevnih portala do istraživačkih redakcija, bez skakanja po sajtovima.</li>
+          <li><b>Ukratko.</b> Deset najvažnijih vesti iz poslednja 24 sata, sa po dve rečenice, za dva-tri minuta.</li>
+          <li><b>Kako ko piše.</b> Uporedi naslove različitih medija o istom događaju i sam proceni.</li>
+          <li><b>Najvažnije prvo.</b> Vesti koje prenosi najviše medija su na vrhu, a kategorije čuvaju vreme kad tražiš samo jednu temu.</li>
+          <li><b>Brzo i štedljivo.</b> Učitava samo tekst, a pročitane vesti rade i bez interneta.</li>
+          <li><b>Lako deljenje.</b> Pošalji kratak opis i link na ceo tekst preko Vibera, WhatsAppa, e-pošte ili LinkedIna.</li>
+          <li><b>Privatno.</b> Bez naloga i bez praćenja. Beleži se samo anonimni broj otvaranja aplikacije.</li>
+        </ul>
+        <h3 class="about-h">Kako se koristi</h3>
         <ul>
-          <li><b>Najvažnije</b> su priče koje prenosi najviše medija, <b>Najnovije</b> su poređane po vremenu.</li>
-          <li><b>Kategorije</b> ispod kartica filtriraju vesti po temi.</li>
-          <li>Oznaka <span class="stack-ex"><i></i><i></i><i></i></span> <b>3 izvora</b> znači da vest prenose tri medija. Ostale verzije su na dnu članka.</li>
-          <li>U članku <b>prevuci levo ili desno</b> za sledeću ili prethodnu vest.</li>
-          <li><b>Original</b> otvara članak na sajtu izvora.</li>
-          <li><b>↻</b> preuzima najnovije vesti. Ako su starije od 5 minuta, pokreće novo prikupljanje (oko 2 minuta).</li>
+          <li><b>Najvažnije</b> i <b>Najnovije</b> menjaju redosled, a <b>kategorije</b> ispod njih filtriraju po temi.</li>
+          <li>Oznaka <span class="stack-ex"><i></i><i></i><i></i></span> <b>3 izvora</b> znači da vest prenose tri medija. Dodirni <b>Kako ko piše</b> u članku da vidiš sve verzije.</li>
+          <li>U članku <b>prevuci levo ili desno</b> za sledeću ili prethodnu vest. Pročitana priča je pročitana u svim izvorima.</li>
+          <li><b>Original</b> otvara članak na sajtu izvora, a <b>⤴</b> ga deli.</li>
+          <li><b>↻</b> donosi najnovije vesti. Ako su starije od 5 minuta, pokreće novo prikupljanje (oko 2 minuta).</li>
         </ul>
         <p class="hint">Tekstovi i fotografije pripadaju izdavačima. Aplikacija je namenjena ličnoj upotrebi i uvek vodi na originalni članak.</p>
       </section>
@@ -651,11 +756,48 @@ async function waitForBuild(since) {
   }
 }
 
+/* ---------- share one article ---------- */
+async function shareArticle() {
+  const [, , itemId] = (location.hash || '').split('/');
+  const it = S.index?.items[itemId];
+  if (!it) return;
+  const src = srcById(it.s).name;
+  // Prefer the opening paragraph of the article itself, else the feed lead.
+  const firstP = [...document.querySelectorAll('.body p')].map((p) => p.textContent.trim()).find((t) => t.length > 60);
+  const note = summarize(firstP || it.l, 240);
+  const title = lat(it.t);
+  const text = `${title} (${src})${note ? `\n\n${lat(note)}` : ''}`;
+  track('share-article');
+  if (navigator.share) {
+    try {
+      return await navigator.share({ title, text: `${text}\n\nCeo tekst:`, url: it.u });
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+    }
+  }
+  const full = `${text}\n\nCeo tekst: ${it.u}`;
+  const enc = encodeURIComponent;
+  showSheet(`<h2>Podeli vest</h2>
+    <div class="share-grid">
+      <a href="https://wa.me/?text=${enc(full)}" target="_blank" rel="noopener">WhatsApp</a>
+      <a href="viber://forward?text=${enc(full)}">Viber</a>
+      <a href="mailto:?subject=${enc(title)}&body=${enc(full)}">E-mail</a>
+      <a href="https://www.linkedin.com/sharing/share-offsite/?url=${enc(it.u)}" target="_blank" rel="noopener">LinkedIn</a>
+    </div>
+    <button class="share-copy" data-copy="${esc(full)}">Kopiraj tekst i link</button>`);
+  document.querySelector('.share-copy').addEventListener('click', async (e) => {
+    try {
+      await navigator.clipboard.writeText(e.target.dataset.copy);
+      toast('Kopirano');
+    } catch {}
+  });
+}
+
 /* ---------- next / previous story ---------- */
 function goStory(dir) {
   const parts = (location.hash || '').slice(2).split('/');
   if (parts[0] !== 'a') return false;
-  const order = ranked();
+  const order = storyOrder();
   const i = order.findIndex((c) => c.id === parts[2]);
   const t = i >= 0 ? order[i + dir] : null;
   if (!t) {
@@ -707,7 +849,14 @@ let current = '';
 function route() {
   if (!S.index) return;
   const h = location.hash || '#/';
-  if (current && h !== current && !S.replacing) S.navs = isListHash(h) ? 0 : (S.navs || 0) + 1;
+  const isArt = (x) => (x || '').startsWith('#/a/');
+  // Remember which screen a story was opened from, and how many history steps lead back to it.
+  if (isArt(h) && !isArt(current)) {
+    S.from = current || '#/';
+    S.hops = 1;
+    S.ctx = current === '#/brief' ? 'brief' : 'list';
+  } else if (isArt(h) && isArt(current) && h !== current && !S.replacing) S.hops = (S.hops || 0) + 1;
+  else if (!isArt(h)) S.hops = 0;
   S.replacing = false;
   if (isListHash(current) && !isListHash(h)) {
     S.listScroll = window.scrollY;
@@ -718,6 +867,7 @@ function route() {
   hideSplash();
   if (parts[0] === 'a' && parts[1]) return renderArticle(parts[1], parts[2]);
   if (parts[0] === 'settings') return renderSettings();
+  if (parts[0] === 'brief') return renderBrief();
   renderList();
 }
 window.addEventListener('hashchange', route);
@@ -764,11 +914,18 @@ app.addEventListener('click', (e) => {
       renderList();
       return toast('Sve označeno kao pročitano');
     case 'back':
-      if (S.navs === 1) {
-        e.preventDefault();
-        history.back();
-      }
+      e.preventDefault();
+      if (S.hops > 0 && history.length > S.hops) history.go(-S.hops); // back to the list or Ukratko, scroll kept
+      else location.hash = S.from || '#/';
       return;
+    case 'share-article':
+      return shareArticle();
+    case 'brief-done': {
+      for (const c of briefing()) S.read[c.id] = Math.max(Date.now(), c.l);
+      store.set('read', S.read);
+      location.hash = '#/';
+      return;
+    }
     case 'smaller':
     case 'bigger':
       S.prefs.size = Math.min(24, Math.max(15, S.prefs.size + (t.dataset.act === 'bigger' ? 1 : -1)));
@@ -828,6 +985,13 @@ window.addEventListener('scroll', () => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') goStory(e.key === 'ArrowRight' ? 1 : -1);
 });
+
+app.addEventListener('toggle', (e) => {
+  if (e.target.classList?.contains('compare')) {
+    S.prefs.compareOpen = e.target.open;
+    store.set('prefs', S.prefs);
+  }
+}, true);
 
 // Refresh when coming back to the app after a while.
 document.addEventListener('visibilitychange', () => {

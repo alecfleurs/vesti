@@ -298,3 +298,54 @@ input[type="range"] { width: 130px; accent-color: var(--ink); }
 .stack-ex i:first-child { margin-left: 0; }
 .stack-ex i:nth-child(2) { background: #3b82f6; }
 .stack-ex i:nth-child(3) { background: #2f9e55; }
+
+/* ---------- Ukratko ---------- */
+.brief-card {
+  display: block; text-decoration: none; margin: 14px 0 4px; padding: 16px 16px 14px; border-radius: var(--radius);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 16%, var(--surface)) 0%, var(--surface) 70%);
+  box-shadow: var(--shadow); border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.brief-card.done { background: var(--surface); border-color: transparent; }
+.bc-head { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--muted); }
+.bc-badge { background: var(--accent); color: #fff; font-weight: 700; font-size: 11.5px; letter-spacing: .04em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; }
+.bc-title { font: 700 20px/1.2 var(--display); letter-spacing: -.02em; margin: 10px 0 8px; color: var(--ink); }
+.brief-card ol { margin: 0 0 10px; padding-left: 1.2em; color: var(--ink-2); font-size: 14px; line-height: 1.4; }
+.brief-card li { margin: 4px 0; display: list-item; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bc-go { font-size: 13.5px; font-weight: 600; color: var(--accent); }
+
+.brief-date { font-size: 13px; font-weight: 600; color: var(--accent); margin: 6px 2px 0; }
+.brief-sub { color: var(--muted); font-size: 14px; margin: 4px 2px 16px; }
+.brief-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.brief-list li a { display: flex; gap: 14px; text-decoration: none; background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px 15px 14px; }
+.brief-list .num { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px; background: var(--ink); color: var(--bg); margin-top: 1px; }
+.brief-list .txt { min-width: 0; flex: 1; }
+.brief-list h2 { font: 600 calc(var(--size) * .94)/1.3 var(--ui); letter-spacing: -.012em; margin: 0 0 6px; color: var(--ink); }
+.brief-list p { margin: 0 0 8px; color: var(--ink-2); font-size: 14.5px; line-height: 1.5; }
+.brief-list .meta { display: flex; gap: 10px; align-items: center; font-size: 12.5px; color: var(--muted); }
+.brief-list li.read a { opacity: .55; }
+.brief-list li.read .num { background: var(--surface-2); color: var(--muted); }
+
+/* ---------- Kako ko piše ---------- */
+.compare { background: var(--surface); border-radius: 16px; box-shadow: var(--shadow); margin: -4px 0 20px; }
+.compare summary { list-style: none; display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; font-size: 14px; }
+.compare summary::-webkit-details-marker { display: none; }
+.compare summary .stack { color: var(--ink); }
+.compare .cmp-n { color: var(--muted); font-size: 13px; margin-left: auto; }
+.compare .chev { color: var(--muted); transition: transform .2s; }
+.compare[open] .chev { transform: rotate(180deg); }
+.cmp-list { padding: 0 14px 6px; }
+.cmp-row { display: block; text-decoration: none; padding: 11px 0 12px; border-top: 1px solid var(--line); }
+.cmp-row .meta { display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted); margin-bottom: 3px; }
+.cmp-row .t { font-weight: 600; font-size: 15px; line-height: 1.35; color: var(--ink); }
+.cmp-row .l { font-size: 13.5px; line-height: 1.45; color: var(--muted); margin-top: 3px; }
+.cmp-row.here .t { color: var(--accent); }
+.cmp-row .here { margin-left: auto; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); }
+
+/* ---------- share sheet ---------- */
+.share-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+.share-grid a { display: block; text-align: center; padding: 14px; border-radius: 14px; background: var(--surface-2); color: var(--ink); text-decoration: none; font-weight: 600; }
+.share-copy { width: 100%; padding: 13px; border-radius: 14px; border: 1px solid var(--line); background: none; color: var(--ink); font-weight: 600; cursor: pointer; margin-bottom: 4px; }
+.bar .icon-btn[data-act="share-article"] svg { width: 19px; height: 19px; }
+
+.about-h { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 16px 0 6px; }
+.about .benefits li { margin: 8px 0; }
