@@ -1,0 +1,8 @@
+{
+  "name": "Vreme",
+  "home": "https://vreme.com/",
+  "feeds": [
+    "https://vreme.com/feed/"
+  ],
+  "color": "#b71c1c"
+}

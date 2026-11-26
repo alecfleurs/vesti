@@ -1,0 +1,8 @@
+{
+  "name": "Radar",
+  "home": "https://radar.nova.rs/",
+  "feeds": [
+    "https://radar.nova.rs/feed/"
+  ],
+  "color": "#6a1b9a"
+}

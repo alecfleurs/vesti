@@ -1,0 +1,9 @@
+{
+  "name": "KRIK",
+  "home": "https://www.krik.rs/",
+  "feeds": [
+    "https://www.krik.rs/feed/"
+  ],
+  "category": "Istraživanja",
+  "color": "#c62828"
+}

@@ -1,0 +1,9 @@
+{
+  "name": "Peščanik",
+  "home": "https://pescanik.net/",
+  "feeds": [
+    "https://pescanik.net/feed/"
+  ],
+  "category": "Mišljenja",
+  "color": "#8d6e63"
+}

@@ -11,7 +11,21 @@
     "b92",
     "politika",
     "blic",
-    "forbes-n1"
+    "forbes-n1",
+    "rts",
+    "bbc-srpski",
+    "rse",
+    "vreme",
+    "radar",
+    "insajder",
+    "krik",
+    "birn",
+    "cins",
+    "021",
+    "juzne-vesti",
+    "pescanik",
+    "beta",
+    "fonet"
   ],
   "exclude": [
     "/(zabava|showbiz|show-biz|horoskop|astro|rijaliti|zvezde|tracevi|lifestyle|superzena|kviz|igrice)(/|$)",
@@ -60,6 +74,10 @@
     {
       "name": "Magazin",
       "match": "(^|/)(magazin|zdravlje|lifestyle|zivot|putovanja|hrana|kuhinja|auto|automobili|vremenska-prognoza|vreme|zanimljivosti|razno|slobodno-vreme|stil|zabava-i-slobodno-vreme)(/|$)"
+    },
+    {
+      "name": "Istraživanja",
+      "match": "(^|/)(istrazivanja|istrazivanje|istrazivacke-price|istrazivacki|investigations?|razotkrivanje)(/|$)"
     },
     {
       "name": "Mišljenja",

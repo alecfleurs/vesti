@@ -1,0 +1,9 @@
+{
+  "name": "CINS",
+  "home": "https://www.cins.rs/",
+  "feeds": [
+    "https://www.cins.rs/feed/"
+  ],
+  "category": "Istraživanja",
+  "color": "#283593"
+}

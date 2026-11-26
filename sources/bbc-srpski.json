@@ -1,0 +1,8 @@
+{
+  "name": "BBC na srpskom",
+  "home": "https://www.bbc.com/serbian/lat",
+  "feeds": [
+    "https://feeds.bbci.co.uk/serbian/lat/rss.xml"
+  ],
+  "color": "#b80000"
+}
