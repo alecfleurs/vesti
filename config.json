@@ -94,7 +94,7 @@
     "threshold": 0.2,
     "windowHours": 72,
     "maxSize": 6,
-    "eventMin": 0.06
+    "eventMin": 0.1
   },
   "excludeTitles": [
     "black friday",
