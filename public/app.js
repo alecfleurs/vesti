@@ -37,7 +37,7 @@ const S = {
   lastLoad: 0,
 };
 
-const APP_VERSION = '1.7';
+const APP_VERSION = '1.8';
 const APP_BUILD = '__BUILD__'; // replaced at build time with commit + date
 
 const app = document.getElementById('app');
@@ -105,6 +105,8 @@ function ago(t) {
 
 /* ---------- icons ---------- */
 const I = {
+  thread: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="12" r="2.2"/><path d="M6 8.2v7.6M8 6.8c5 .4 8 2.4 8.4 3.6M8 17.2c5-.4 8-2.4 8.4-3.6"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
   share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>',
   install: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M12 7v7"/><path d="M9 11l3 3 3-3"/></svg>',
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
@@ -249,7 +251,26 @@ function viewClusters() {
     const cat = Object.entries(votes).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Ostalo';
     out.push({ ...c, items, rep, srcs, cat });
   }
-  return out;
+  if (S.prefs.threads === false) return out;
+  // Developing stories: the newest step stands in for the whole thread.
+  const byThread = new Map();
+  for (const c of out) if (c.th) byThread.set(c.th, [...(byThread.get(c.th) || []), c]);
+  const hide = new Set();
+  for (const steps of byThread.values()) {
+    if (steps.length < 2) continue;
+    steps.sort((a, b) => a.l - b.l);
+    const newest = steps[steps.length - 1];
+    newest.steps = steps.map((x) => x.id);
+    newest.rankSrc = Math.max(...steps.map((x) => x.srcs.length)); // a big story stays big as it develops
+    for (const x of steps.slice(0, -1)) hide.add(x.id);
+  }
+  return out.filter((c) => !hide.has(c.id));
+}
+
+// All visible steps of a thread, oldest first (for the reader timeline).
+function threadSteps(th) {
+  if (!th || S.prefs.threads === false) return [];
+  return S.index.clusters.filter((c) => c.th === th && c.it.some(visible)).sort((a, b) => a.l - b.l);
 }
 
 function ranked() {
@@ -260,7 +281,7 @@ function ranked() {
     .filter((c) => now - c.l < (S.cat ? 14 * 24 : 30) * 3600e3)
     .map((c) => {
       const age = (now - c.l) / 3600e3;
-      const score = (c.srcs.length + 0.25 * (c.items.length - c.srcs.length)) * Math.exp(-age / 14);
+      const score = ((c.rankSrc || c.srcs.length) + 0.25 * (c.items.length - c.srcs.length)) * Math.exp(-age / 14);
       return { c, score };
     })
     .sort((a, b) => b.score - a.score)
@@ -295,13 +316,183 @@ function briefing() {
   const now = Date.now();
   return viewClusters()
     .filter((c) => now - c.l < 24 * 3600e3)
-    .map((c) => ({ c, score: (c.srcs.length + 0.25 * (c.items.length - c.srcs.length)) * Math.exp(-(now - c.l) / 3600e3 / 18) }))
+    .map((c) => ({ c, score: ((c.rankSrc || c.srcs.length) + 0.25 * (c.items.length - c.srcs.length)) * Math.exp(-(now - c.l) / 3600e3 / 18) }))
     .sort((a, b) => b.score - a.score)
     .slice(0, 10)
     .map((x) => x.c);
 }
 // Swipe / next-previous follow the screen the story was opened from.
-const storyOrder = () => (S.ctx === 'brief' ? briefing() : ranked());
+const storyOrder = () => (S.ctx === 'brief' ? briefing() : S.ctx === 'search' ? S.results || [] : ranked());
+
+/* ---------- search ---------- */
+// Fold for matching: Cyrillic -> Latin, no diacritics, lowercase. Keeps a map back to original positions
+// so matches can be highlighted in the original text.
+const FOLD1 = { 'đ': 'dj', 'č': 'c', 'ć': 'c', 'š': 's', 'ž': 'z' };
+function foldMap(str) {
+  let f = '';
+  const idx = [];
+  for (let i = 0; i < str.length; i++) {
+    let ch = str[i];
+    if (/[\u0400-\u04FF]/.test(ch)) ch = CYR[ch] ?? ch;
+    ch = ch.toLowerCase();
+    let out = '';
+    for (const c of ch) out += FOLD1[c] ?? c.normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+    for (let k = 0; k < out.length; k++) {
+      f += out[k];
+      idx.push(i);
+    }
+  }
+  return { f, idx };
+}
+const foldStr = (s) => foldMap(s || '').f;
+
+function searchIndex() {
+  if (S.hay && S.hayFor === S.index.generated) return S.hay;
+  const clusterOf = new Map();
+  for (const c of S.index.clusters) for (const id of c.it) clusterOf.set(id, c.id);
+  S.hay = Object.entries(S.index.items).map(([id, it]) => ({ id, cid: clusterOf.get(id), t: foldStr(it.t), l: foldStr(it.l) }));
+  S.hayFor = S.index.generated;
+  return S.hay;
+}
+
+function runSearch(q) {
+  const words = foldStr(q).split(/[^a-z0-9]+/).filter((w) => w.length >= 2);
+  if (!words.length) return [];
+  const now = Date.now();
+  const best = new Map(); // cluster id -> { score, itemId }
+  for (const h of searchIndex()) {
+    const it = S.index.items[h.id];
+    if (!visible(h.id)) continue;
+    let score = 0;
+    let all = true;
+    for (const w of words) {
+      const re = new RegExp('(^|[^a-z0-9])' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      const inT = h.t.includes(w);
+      const inL = h.l.includes(w);
+      if (!inT && !inL) {
+        all = false;
+        break;
+      }
+      score += (inT ? 3 : 0) + (inL ? 1 : 0) + (re.test(h.t) ? 2 : re.test(h.l) ? 0.5 : 0);
+    }
+    if (!all) continue;
+    score += 2 * Math.exp(-(now - it.p) / 3600e3 / 24); // newer first among equals
+    const prev = best.get(h.cid);
+    if (!prev || score > prev.score) best.set(h.cid, { score, itemId: h.id });
+  }
+  const clusters = new Map(S.index.clusters.map((c) => [c.id, c]));
+  return [...best.entries()]
+    .sort((a, b) => b[1].score - a[1].score)
+    .slice(0, 100)
+    .map(([cid, b]) => {
+      const c = clusters.get(cid);
+      const items = c.it.filter(visible);
+      return { ...c, items, rep: b.itemId, srcs: [...new Set(items.map((id) => S.index.items[id].s))], hit: b.itemId };
+    });
+}
+
+// Wraps matches of the query words in <mark>, working on the original (unfolded) text.
+function highlight(text, q, max) {
+  text = lat(text || '');
+  const words = foldStr(q).split(/[^a-z0-9]+/).filter((w) => w.length >= 2);
+  const { f, idx } = foldMap(text);
+  const ranges = [];
+  for (const w of words) {
+    let from = 0;
+    let at;
+    while ((at = f.indexOf(w, from)) !== -1) {
+      ranges.push([idx[at], idx[at + w.length - 1] + 1]);
+      from = at + w.length;
+    }
+  }
+  ranges.sort((a, b) => a[0] - b[0]);
+  let start = 0;
+  if (max && text.length > max && ranges.length) start = Math.max(0, ranges[0][0] - 60);
+  let end = max ? Math.min(text.length, start + max) : text.length;
+  let out = start > 0 ? '…' : '';
+  let pos = start;
+  for (const [a, b] of ranges) {
+    if (a < pos || a >= end) continue;
+    out += esc(text.slice(pos, a)) + '<mark>' + esc(text.slice(a, b)) + '</mark>';
+    pos = b;
+  }
+  out += esc(text.slice(pos, end)) + (end < text.length ? '…' : '');
+  return out;
+}
+
+function renderSearch() {
+  app.innerHTML =
+    bar(`<a class="icon-btn" href="#/" aria-label="Nazad">${I.back}</a>
+      <form class="search-box" role="search"><span class="sb-icon">${I.search}</span>
+        <input id="q" type="search" placeholder="Pretraži vesti" value="${esc(S.query || '')}" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+        <button type="button" class="sb-clear" aria-label="Obriši"${S.query ? '' : ' hidden'}>×</button></form>`) +
+    `<main class="wrap"><div id="results"></div></main>`;
+  const input = $('#q');
+  let timer;
+  const update = () => {
+    S.query = input.value;
+    $('.sb-clear').hidden = !S.query;
+    renderResults();
+  };
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(update, 120);
+  });
+  $('.search-box').addEventListener('submit', (e) => {
+    e.preventDefault();
+    input.blur();
+    rememberSearch(input.value);
+  });
+  $('.sb-clear').addEventListener('click', () => {
+    input.value = '';
+    update();
+    input.focus();
+  });
+  renderResults();
+  hideSplash();
+  if (!S.query) input.focus();
+  else requestAnimationFrame(() => {
+    const li = S.lastStory && document.querySelector(`#results .card[data-id="${S.lastStory}"]`);
+    if (li) li.scrollIntoView({ block: 'center' });
+  });
+}
+
+function rememberSearch(q) {
+  q = (q || '').trim();
+  if (q.length < 2) return;
+  const recent = store.get('recentSearches', []).filter((x) => x.toLowerCase() !== q.toLowerCase());
+  recent.unshift(q);
+  store.set('recentSearches', recent.slice(0, 6));
+}
+
+function renderResults() {
+  const box = $('#results');
+  if (!box) return;
+  const q = (S.query || '').trim();
+  if (q.length < 2) {
+    const recent = store.get('recentSearches', []);
+    S.results = [];
+    box.innerHTML = `<p class="search-hint">Pretražuje naslove i uvode svih vesti u aplikaciji. Latinica i ćirilica, sa kvačicama ili bez.</p>
+      ${recent.length ? `<div class="panel-label">Skorašnje pretrage</div><div class="chips recent">${recent.map((r) => `<button data-recent="${esc(r)}">${esc(r)}</button>`).join('')}</div>` : ''}`;
+    return;
+  }
+  const results = runSearch(q);
+  S.results = results;
+  if (!results.length) {
+    box.innerHTML = `<p class="empty">Nema rezultata za „${esc(q)}“.</p>`;
+    return;
+  }
+  box.innerHTML = `<div class="list-tools"><span>${results.length === 100 ? '100+' : results.length} ${results.length === 1 ? 'vest' : 'vesti'}</span></div>
+    <ul class="list">${results
+      .map((c) => {
+        const it = S.index.items[c.hit];
+        const src = srcById(it.s);
+        return `<li class="card${isUnread(c) ? '' : ' read'}" data-id="${c.id}"><a href="#/a/${c.hit}/${c.id}" data-remember>
+          <div class="txt"><div class="meta">${sourceBadge(c, src)}<span>${ago(it.p)}</span></div>
+          <h2>${highlight(it.t, q)}</h2>${it.l ? `<p class="lead">${highlight(it.l, q, 180)}</p>` : ''}</div></a></li>`;
+      })
+      .join('')}</ul>`;
+}
 
 const isUnread = (c) => !S.read[c.id] || c.l > S.read[c.id] + 1000;
 
@@ -396,7 +587,7 @@ function renderList() {
       const fresh = S.read[c.id] && un;
       const img = bigImg(it) || c.items.map((id) => bigImg(idx.items[id])).find(Boolean) || '';
       const lead = i === 0 && S.tab === 'top' && thumbs && img && un;
-      const meta = `<div class="meta">${fresh ? '<span class="dot-new" title="Novi izvori"></span>' : ''}${sourceBadge(c, src)}<span>${ago(c.l)}</span></div>`;
+      const meta = `<div class="meta">${fresh ? '<span class="dot-new" title="Novi izvori"></span>' : ''}${sourceBadge(c, src)}<span>${ago(c.l)}</span>${c.steps ? `<span class="dev">${I.thread}Razvoj priče · ${c.steps.length}</span>` : ''}</div>`;
       const txt = `<div class="txt">${meta}<h2>${esc(lat(it.t))}</h2>${it.l ? `<p class="lead">${esc(lat(it.l))}</p>` : ''}</div>`;
       return lead
         ? `<li class="card lead-story" data-id="${c.id}"><a href="#/a/${c.rep}/${c.id}">${imgTag(img, 'hero-img')}${txt}</a></li>`
@@ -416,7 +607,8 @@ function renderList() {
       <div class="t"><div class="date">${esc(today.charAt(0).toUpperCase() + today.slice(1))}</div>
         <h1>${esc(idx.title || 'Vesti')}</h1>
         <div class="sub">Ažurirano ${ago(idx.generated)} · ${unread} nepročitanih</div></div>
-      <div class="actions"><button class="icon-btn" data-act="refresh" aria-label="Osveži">${I.refresh}</button>
+      <div class="actions"><a class="icon-btn" href="#/search" aria-label="Pretraga">${I.search}</a>
+        <button class="icon-btn" data-act="refresh" aria-label="Osveži">${I.refresh}</button>
         <a class="icon-btn" href="#/settings" aria-label="Podešavanja">${I.gear}</a></div>
     </header>
     <main class="wrap">
@@ -443,6 +635,26 @@ function renderList() {
     S.leftFrom = S.lastStory = null;
     document.querySelector('.chips [aria-pressed="true"]')?.scrollIntoView({ inline: 'center', block: 'nearest' });
   });
+}
+
+// "Tok priče": the steps of a developing story, oldest first.
+function timelineBlock(cluster) {
+  const steps = threadSteps(cluster?.th);
+  if (steps.length < 2) return '';
+  const rows = steps
+    .map((c) => {
+      const items = c.it.filter(visible);
+      const rep = items.includes(c.r) ? c.r : items[0];
+      const o = S.index.items[rep];
+      const here = c.id === cluster.id;
+      const inner = `<span class="tl-dot"></span><div class="tl-body"><div class="tl-when">${ago(c.l)}${here ? ' · <b>čitaš</b>' : ''}</div><div class="tl-t">${esc(lat(o.t))}</div></div>`;
+      return here ? `<div class="tl-row here">${inner}</div>` : `<a class="tl-row" href="#/a/${rep}/${c.id}">${inner}</a>`;
+    })
+    .join('');
+  const isNewest = steps[steps.length - 1].id === cluster.id;
+  return `<details class="timeline"${S.prefs.timelineOpen !== false ? ' open' : ''}>
+    <summary>${I.thread}<span>Tok priče</span><span class="cmp-n">${steps.length} koraka${isNewest ? '' : ' · ima novijih'}</span><span class="chev">▾</span></summary>
+    <div class="tl-list">${rows}</div></details>`;
 }
 
 // "Kako ko piše": every outlet's headline for the same story, collapsed under the title.
@@ -502,6 +714,7 @@ async function renderArticle(itemId, clusterId) {
       <div class="kicker"><span class="src" style="--c:${esc(src.color)}">${esc(src.name)}</span><span>${ago(it.p)}</span>
         ${it.w ? `<span>${Math.max(1, Math.round(it.w / 220))} min čitanja</span>` : ''}<span class="byline"></span></div>
       <h1>${esc(lat(it.t))}</h1>
+      ${timelineBlock(cluster)}
       ${others.length ? compareBlock(cluster, itemId) : ''}
       <div class="content">${it.x ? '<p class="notice">Učitavam…</p>' : ''}</div>
       ${prev || next ? `<nav class="story-nav">${navCard(prev, 'prev')}${navCard(next, 'next')}</nav>
@@ -582,6 +795,8 @@ function renderSettings() {
           <input type="range" min="15" max="24" step="1" value="${S.prefs.size}" data-act="size"></div>
         <div class="row"><div class="grow">Slike u listi<div class="hint">Isključi za manju potrošnju podataka</div></div>
           <input type="checkbox" class="switch" data-act="thumbs" ${S.prefs.thumbs !== false ? 'checked' : ''}></div>
+        <div class="row"><div class="grow">Spoji razvoj priče<div class="hint">Nastavak iste priče (npr. hapšenje pa pritvor) prikazuje se kao jedna vest sa tokom priče</div></div>
+          <input type="checkbox" class="switch" data-act="threads" ${S.prefs.threads !== false ? 'checked' : ''}></div>
         <div class="row"><div class="grow">Sve latinicom<div class="hint">Ćirilične naslove i tekstove prikazuje latinicom</div></div>
           <input type="checkbox" class="switch" data-act="latin" ${S.prefs.latin ? 'checked' : ''}></div>
       </section>
@@ -634,6 +849,8 @@ function renderSettings() {
           <li><b>Svi važni mediji na jednom mestu.</b> Od dnevnih portala do istraživačkih redakcija, bez skakanja po sajtovima.</li>
           <li><b>Ukratko.</b> Deset najvažnijih vesti iz poslednja 24 sata, sa po dve rečenice, za dva-tri minuta.</li>
           <li><b>Kako ko piše.</b> Uporedi naslove različitih medija o istom događaju i sam proceni.</li>
+          <li><b>Tok priče.</b> Kada se priča razvija (hapšenje, pa pritvor, pa optužnica), vidiš samo najnoviji korak, a ceo tok je u članku.</li>
+          <li><b>Pretraga.</b> Nađi bilo koju vest za sekund, latinicom ili ćirilicom, sa kvačicama ili bez.</li>
           <li><b>Najvažnije prvo.</b> Vesti koje prenosi najviše medija su na vrhu, a kategorije čuvaju vreme kad tražiš samo jednu temu.</li>
           <li><b>Brzo i štedljivo.</b> Učitava samo tekst, a pročitane vesti rade i bez interneta.</li>
           <li><b>Lako deljenje.</b> Pošalji kratak opis i link na ceo tekst preko Vibera, WhatsAppa, e-pošte ili LinkedIna.</li>
@@ -644,6 +861,8 @@ function renderSettings() {
           <li><b>Najvažnije</b> i <b>Najnovije</b> menjaju redosled, a <b>kategorije</b> ispod njih filtriraju po temi.</li>
           <li>Oznaka <span class="stack-ex"><i></i><i></i><i></i></span> <b>3 izvora</b> znači da vest prenose tri medija. Dodirni <b>Kako ko piše</b> u članku da vidiš sve verzije.</li>
           <li>U članku <b>prevuci levo ili desno</b> za sledeću ili prethodnu vest. Pročitana priča je pročitana u svim izvorima.</li>
+          <li>Oznaka <b>Razvoj priče · 3</b> znači da je to treći korak iste priče. Prethodni koraci su u članku, pod <b>Tok priče</b>.</li>
+          <li><b>Lupa</b> na početnom ekranu otvara pretragu.</li>
           <li><b>Original</b> otvara članak na sajtu izvora, a <b>⤴</b> ga deli.</li>
           <li><b>↻</b> donosi najnovije vesti. Ako su starije od 5 minuta, pokreće novo prikupljanje (oko 2 minuta).</li>
         </ul>
@@ -854,7 +1073,7 @@ function route() {
   if (isArt(h) && !isArt(current)) {
     S.from = current || '#/';
     S.hops = 1;
-    S.ctx = current === '#/brief' ? 'brief' : 'list';
+    S.ctx = current === '#/brief' ? 'brief' : current === '#/search' ? 'search' : 'list';
   } else if (isArt(h) && isArt(current) && h !== current && !S.replacing) S.hops = (S.hops || 0) + 1;
   else if (!isArt(h)) S.hops = 0;
   S.replacing = false;
@@ -868,12 +1087,21 @@ function route() {
   if (parts[0] === 'a' && parts[1]) return renderArticle(parts[1], parts[2]);
   if (parts[0] === 'settings') return renderSettings();
   if (parts[0] === 'brief') return renderBrief();
+  if (parts[0] === 'search') return renderSearch();
   renderList();
 }
 window.addEventListener('hashchange', route);
 
 /* ---------- events ---------- */
 app.addEventListener('click', (e) => {
+  const rec = e.target.closest('[data-recent]');
+  if (rec) {
+    $('#q').value = rec.dataset.recent;
+    S.query = rec.dataset.recent;
+    $('.sb-clear').hidden = false;
+    return renderResults();
+  }
+  if (e.target.closest('[data-remember]')) rememberSearch(S.query);
   const go = e.target.closest('[data-go]');
   if (go) {
     e.preventDefault();
@@ -956,7 +1184,10 @@ app.addEventListener('input', (e) => {
 });
 app.addEventListener('change', (e) => {
   const t = e.target;
-  if (t.dataset.act === 'thumbs') {
+  if (t.dataset.act === 'threads') {
+    S.prefs.threads = t.checked;
+    savePrefs();
+  } else if (t.dataset.act === 'thumbs') {
     S.prefs.thumbs = t.checked;
     savePrefs();
   } else if (t.dataset.act === 'latin') {
@@ -989,6 +1220,10 @@ document.addEventListener('keydown', (e) => {
 app.addEventListener('toggle', (e) => {
   if (e.target.classList?.contains('compare')) {
     S.prefs.compareOpen = e.target.open;
+    store.set('prefs', S.prefs);
+  }
+  if (e.target.classList?.contains('timeline')) {
+    S.prefs.timelineOpen = e.target.open;
     store.set('prefs', S.prefs);
   }
 }, true);
