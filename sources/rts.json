@@ -1,5 +1,9 @@
 {
   "name": "RTS",
   "home": "https://rts.rs",
-  "feeds": []
+  "feeds": [],
+  "exclude": [
+    "rts\\.rs/(tv|radio|rts-planeta|program)/"
+  ],
+  "color": "#1e5aa8"
 }

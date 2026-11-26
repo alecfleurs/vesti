@@ -27,7 +27,7 @@ if (!key || key.length < 8) {
 
 const config = JSON.parse(await readFile(path.join(ROOT, 'config.json'), 'utf8'));
 const globalExclude = (config.exclude || []).map((r) => new RegExp(r, 'i'));
-const catRules = (config.categories || []).map((c) => ({ name: c.name, re: new RegExp(c.match, 'i') }));
+const catRules = (config.categories || []).map((c) => ({ name: c.name, re: new RegExp(c.match, 'i'), weak: !!c.weak }));
 const slug = (t) => '/' + fold(t).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '/';
 // URL section first, then the feed's own category tags, then the source default.
 function categorize(it, src) {
@@ -35,9 +35,18 @@ function categorize(it, src) {
   try {
     path = new URL(it.url).pathname.toLowerCase();
   } catch {}
-  for (const r of catRules) if (r.re.test(path)) return r.name;
-  for (const c of it.cats || []) for (const r of catRules) if (r.re.test(slug(c))) return r.name;
-  return src?.category || 'Ostalo';
+  // A "weak" rule (generic sections like /vesti/) loses to a specific signal or the source default.
+  let weak = null;
+  for (const r of catRules) {
+    if (!r.re.test(path)) continue;
+    if (!r.weak) return r.name;
+    weak = r.name;
+    break;
+  }
+  for (const c of [it.section, ...(it.cats || [])].filter(Boolean)) {
+    for (const r of catRules) if (r.re.test(slug(c)) && !r.weak) return r.name;
+  }
+  return src?.category || weak || 'Ostalo';
 }
 
 // ---------- sources ----------
@@ -166,6 +175,7 @@ if (extractArticle) {
           it.words = a.words;
           if (!it.lead && a.excerpt) it.lead = a.excerpt;
           if (a.image) it.hi = a.image;
+          if (a.section) it.section = a.section;
           if (!it.image && a.image) it.image = a.image;
           if (!it.published && a.published) it.published = a.published;
           delete it.fail;
@@ -188,7 +198,7 @@ for (const it of Object.values(state.items)) {
   it.cat = categorize(it, srcMap[it.source]);
   const l = (catLog[it.source] ||= { counts: {}, other: [] });
   l.counts[it.cat] = (l.counts[it.cat] || 0) + 1;
-  if (it.cat === 'Ostalo' && l.other.length < 3) l.other.push(new URL(it.url).pathname.slice(0, 70) + (it.cats?.length ? ` [${it.cats.join(', ')}]` : ''));
+  if (it.cat === 'Ostalo' && l.other.length < 3) l.other.push(new URL(it.url).pathname.slice(0, 70) + ([it.section, ...(it.cats || [])].filter(Boolean).length ? ` [${[it.section, ...(it.cats || [])].filter(Boolean).join(', ')}]` : ''));
 }
 for (const [id, l] of Object.entries(catLog)) {
   log(`cat ${id.padEnd(10)} ${Object.entries(l.counts).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}:${v}`).join(' ')}`);

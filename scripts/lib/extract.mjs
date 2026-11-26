@@ -5,7 +5,7 @@ import { Readability } from '@mozilla/readability';
 import { fetchText } from './feeds.mjs';
 import { preClean, postClean } from './clean.mjs';
 
-export const EXTRACT_VERSION = 4;
+export const EXTRACT_VERSION = 5;
 
 const quiet = new VirtualConsole(); // swallow CSS/script parse noise from news pages
 
@@ -98,6 +98,10 @@ export async function extractArticle(url) {
   const doc = dom.window.document;
   const meta = (sel) => doc.querySelector(sel)?.getAttribute('content') || '';
   const ogImage = meta('meta[property="og:image"]') || meta('meta[name="twitter:image"]');
+  const crumbs = [...doc.querySelectorAll('[class*="breadcrumb"] a, nav[aria-label*="bread" i] a, [itemtype*="BreadcrumbList"] [itemprop="name"]')]
+    .map((a) => a.textContent.trim())
+    .filter((t) => t && t.length < 40 && !/^(početna|naslovna|home|почетна|насловна)$/i.test(t));
+  const section = (meta('meta[property="article:section"]') || meta('meta[name="section"]') || meta('meta[name="category"]') || crumbs[0] || '').slice(0, 60);
   const published = Date.parse(meta('meta[property="article:published_time"]') || meta('meta[itemprop="datePublished"]'));
   fixLazyImages(doc);
   preClean(doc);
@@ -115,5 +119,6 @@ export async function extractArticle(url) {
     byline: (art.byline || '').trim().slice(0, 120),
     image: ogImage ? new URL(ogImage, page.url).href : '',
     published: Number.isFinite(published) ? published : null,
+    section,
   };
 }

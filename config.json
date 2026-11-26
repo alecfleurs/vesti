@@ -15,7 +15,8 @@
   ],
   "exclude": [
     "/(zabava|showbiz|show-biz|horoskop|astro|rijaliti|zvezde|tracevi|lifestyle|superzena|kviz|igrice)(/|$)",
-    "/(najave-emisija|video/dnevnik|video/dan-uzivo)(/|$)"
+    "/(najave-emisija|video/dnevnik|video/dan-uzivo)(/|$)",
+    "/(print|naslovna-strana[^/]*|emisije)(/|$)"
   ],
   "cluster": {
     "threshold": 0.25,
@@ -58,11 +59,16 @@
     },
     {
       "name": "Magazin",
-      "match": "(^|/)(magazin|zdravlje|lifestyle|zivot|putovanja|hrana|kuhinja|auto|automobili|vremenska-prognoza|vreme|zanimljivosti|razno)(/|$)"
+      "match": "(^|/)(magazin|zdravlje|lifestyle|zivot|putovanja|hrana|kuhinja|auto|automobili|vremenska-prognoza|vreme|zanimljivosti|razno|slobodno-vreme|stil|zabava-i-slobodno-vreme)(/|$)"
+    },
+    {
+      "name": "Mišljenja",
+      "match": "(^|/)(dijalog|kolumna|kolumne|komentari|komentar|licni-stavovi|stavovi|misljenja|analize|blogovi|intervju)(/|$)"
     },
     {
       "name": "Srbija",
-      "match": "(^|/)(srbija|drustvo|beograd|novi-sad|nis|kragujevac|gradovi|lokal|dogadjaji|vesti|info|obrazovanje|vojvodina)(/|$)"
+      "match": "(^|/)(srbija|drustvo|beograd|novi-sad|nis|kragujevac|gradovi|lokal|dogadjaji|vesti|info|obrazovanje|vojvodina)(/|$)",
+      "weak": true
     }
   ]
 }
