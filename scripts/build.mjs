@@ -184,6 +184,7 @@ if (extractArticle) {
     // Missing bodies first, then bodies made by an older version of the cleaner.
     .filter((it) => {
       const hours = Math.max(config.extractHours, sources.find((x) => x.id === it.source)?.retainHours || 0);
+      if (sources.find((x) => x.id === it.source)?.extract === false) return false; // headlines-only source
       return (!it.x || it.ev !== EV) && itemTime(it) > now - hours * 3600e3;
     })
     .filter((it) => !it.fail || (it.full && it.fail < 4) || (it.fail < 3 && now - it.lastTry > 2 * 3600e3))

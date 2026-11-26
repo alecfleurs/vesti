@@ -31,6 +31,7 @@ export function findProblems(sources, state, now) {
       };
       continue;
     }
+    if (src.extract === false) continue; // headlines-only by choice
     const recent = Object.values(state.items).filter(
       (it) => it.source === src.id && now - (it.firstSeen || 0) < EXTRACT_WINDOW_HOURS * 3600e3,
     );

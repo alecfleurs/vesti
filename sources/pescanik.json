@@ -6,5 +6,6 @@
   ],
   "category": "Mišljenja",
   "color": "#8d6e63",
-  "retainHours": 336
+  "retainHours": 336,
+  "extract": false
 }
