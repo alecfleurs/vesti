@@ -169,6 +169,12 @@ try {
   log(`! extraction disabled (${e.code || e.message}); run npm install`);
 }
 if (extractArticle) {
+  for (const it of Object.values(state.items)) {
+    if (!it.x && /HTTP (429|503)/.test(it.err || '')) {
+      delete it.fail;
+      delete it.err;
+    }
+  }
   const due = Object.values(state.items)
     // Missing bodies first, then bodies made by an older version of the cleaner.
     .filter((it) => (!it.x || it.ev !== EV) && itemTime(it) > now - config.extractHours * 3600e3)
@@ -198,9 +204,16 @@ if (extractArticle) {
           delete it.fail;
           ok++;
         } catch (e) {
+          // Throttled: stop hitting this site for this run; the items retry next run without a strike.
+          if (/HTTP (429|503)/.test(e.message)) {
+            const k = `${it.source}: throttled (${e.message}), backing off`;
+            failures[k] = (failures[k] || 0) + 1;
+            delete it.lastTry;
+            break;
+          }
           it.fail = (it.fail || 0) + 1;
           it.err = String(e.message).slice(0, 120);
-          const k = `${it.source}: ${it.err.replace(/\d{3,}/g, 'N').slice(0, 60)}`;
+          const k = `${it.source}: ${it.err.replace(/\d{4,}/g, 'N').slice(0, 60)}`;
           failures[k] = (failures[k] || 0) + 1;
           bad++;
         }
@@ -213,7 +226,7 @@ if (extractArticle) {
   const pending = {};
   for (const it of Object.values(state.items)) {
     if (it.x || !it.fail) continue;
-    const k = `${it.source}: ${String(it.err).replace(/\d{3,}/g, 'N').slice(0, 60)}`;
+    const k = `${it.source}: ${String(it.err).replace(/\d{4,}/g, 'N').slice(0, 60)}`;
     pending[k] = (pending[k] || 0) + 1;
   }
   for (const [k, n] of Object.entries(pending).sort((a, b) => b[1] - a[1]).slice(0, 8)) log(`    without text x${n} ${k}`);
