@@ -284,6 +284,11 @@ function sourceBadge(c, src) {
 
 function renderList() {
   const idx = S.index;
+  const pass = store.get('pass');
+  if (pass && !isStandalone()) {
+    const want = '#k=' + encodeURIComponent(pass);
+    if (location.hash !== want) history.replaceState(null, '', location.pathname + location.search + want);
+  }
   const list = ranked();
   const shown = list.slice(0, S.limit);
   const unread = list.filter(isUnread).length;
@@ -320,7 +325,8 @@ function renderList() {
         <a class="icon-btn" href="#/settings" aria-label="Podešavanja">${I.gear}</a></div>
     </header>
     <main class="wrap">
-      ${canOfferInstall() && !store.get('installDismissed') ? `<div class="install-banner">${I.install}
+      ${inAppHint()}
+      ${!isInAppBrowser() && canOfferInstall() && !store.get('installDismissed') ? `<div class="install-banner">${I.install}
         <div class="grow"><b>Instaliraj Vesti</b><span>Kao prava aplikacija, bez pregledača</span></div>
         <button class="pill-btn" data-act="install">Instaliraj</button><button class="x" data-act="install-dismiss" aria-label="Zatvori">×</button></div>` : ''}
       <div class="seg-tabs" role="tablist">
@@ -517,17 +523,27 @@ function renderSettings() {
 
 function renderUnlock(err = '') {
   app.innerHTML = `<main class="unlock"><form class="box" id="unlock">
-    <h1>Vesti</h1><p>Unesi lozinku (NEWS_KEY) da otključaš vesti na ovom uređaju.</p>
-    <label class="field"><span>Lozinka</span><input id="pass" type="password" autocomplete="current-password" required></label>
+    <h1>Vesti</h1><p>Unesi lozinku ili nalepi link koji si dobio.</p>
+    ${inAppHint()}
+    <label class="field"><span>Lozinka ili link</span><input id="pass" type="password" autocomplete="current-password" autocapitalize="off" spellcheck="false" required></label>
+    <label class="show-pass"><input type="checkbox" id="showpass"> Prikaži</label>
     <div class="err">${esc(err)}</div>
     <button class="primary" type="submit">Otključaj</button></form></main>`;
+  $('#showpass').addEventListener('change', (e) => ($('#pass').type = e.target.checked ? 'text' : 'password'));
   $('#unlock').addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = $('#unlock button');
     btn.textContent = 'Otključavam…';
     btn.disabled = true;
-    S.fromLink = false;
-    await load($('#pass').value);
+    let v = $('#pass').value.trim();
+    const m = /#k=([^\s#]+)/.exec(v);
+    S.fromLink = !!m;
+    if (m) {
+      try {
+        v = decodeURIComponent(m[1]);
+      } catch {}
+    }
+    await load(v);
   });
   $('#pass').focus();
 }
@@ -588,9 +604,9 @@ let current = '';
 function route() {
   if (!S.index) return;
   const h = location.hash || '#/';
-  if (current && h !== current && !S.replacing) S.navs = h === '#/' ? 0 : (S.navs || 0) + 1;
+  if (current && h !== current && !S.replacing) S.navs = isListHash(h) ? 0 : (S.navs || 0) + 1;
   S.replacing = false;
-  if (current === '#/' && h !== '#/') {
+  if (isListHash(current) && !isListHash(h)) {
     S.listScroll = window.scrollY;
     S.leftFrom = h.split('/')[3] || null;
   }
@@ -663,6 +679,7 @@ app.addEventListener('click', (e) => {
     case 'logout':
       store.del('key');
       store.del('pass');
+      history.replaceState(null, '', location.pathname + location.search + '#/');
       S.key = null;
       S.index = null;
       return renderUnlock();
@@ -810,9 +827,19 @@ function takeLinkPassword() {
   try {
     pass = decodeURIComponent(m[1]);
   } catch {}
-  history.replaceState(null, '', location.pathname + location.search + '#/');
+  // Installed app: drop it from the address bar. Browser: keep it, so "Open in Chrome" and
+  // iPhone's "Add to Home Screen" carry the password into the app.
+  if (isStandalone()) history.replaceState(null, '', location.pathname + location.search + '#/');
   return pass;
 }
+
+const isListHash = (h) => !h || h === '#' || h === '#/' || h.startsWith('#k=');
+// In-app browsers (Viber, WhatsApp, Instagram, Facebook...) keep their own storage and can't install apps.
+const isInAppBrowser = () => /; wv\)|FBAN|FBAV|Instagram|Viber|WhatsApp|Line\/|Telegram/i.test(navigator.userAgent);
+const inAppHint = () =>
+  isInAppBrowser()
+    ? `<div class="notice inapp">Otvoreno je u pregledaču unutar druge aplikacije. Za instalaciju otvori ovu stranu u Chrome-u: meni <b>⋮</b> → <b>Otvori u Chrome-u</b> (ili „Otvori u pregledaču“).</div>`
+    : '';
 
 /* ---------- boot ---------- */
 applyPrefs();
@@ -823,6 +850,6 @@ if (!('DecompressionStream' in window) || !crypto.subtle) {
   app.innerHTML = '<p class="empty">Učitavam…</p>';
   const linkPass = takeLinkPassword();
   S.fromLink = !!linkPass;
-  if (linkPass) store.del('key'); // a fresh link wins over a stale saved key
+  if (linkPass && linkPass !== store.get('pass')) store.del('key'); // a different password in the link wins
   load(linkPass || undefined);
 }

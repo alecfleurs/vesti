@@ -279,3 +279,6 @@ input[type="range"] { width: 130px; accent-color: var(--ink); }
 .share-box { width: 100%; min-height: 90px; font: 13px/1.4 ui-monospace, monospace; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); padding: 10px; }
 @keyframes fade { from { opacity: 0; } }
 @keyframes up { from { transform: translateY(40px); opacity: 0; } }
+.notice.inapp { margin: 14px 0 0; color: var(--ink-2); border-left: 3px solid var(--warn); }
+.unlock .notice.inapp { margin: 0 0 16px; }
+.show-pass { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--muted); margin: -4px 0 6px; }
