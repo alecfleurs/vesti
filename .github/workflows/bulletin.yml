@@ -17,6 +17,10 @@ on:
       rate:
         description: 'Speaking rate (0.8 to 1.2)'
         default: '1.0'
+      print_script:
+        description: 'Also print the script in the log (test only: logs of this public repo are public)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -40,6 +44,9 @@ jobs:
           GEMINI_MODEL: ${{ inputs.model }}
           RATE: ${{ inputs.rate }}
         run: node scripts/bulletin.mjs
+      - name: Print script
+        if: inputs.print_script
+        run: cat out/bulletin/script.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
