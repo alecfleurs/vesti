@@ -189,6 +189,12 @@ async function decrypt(buf) {
   return JSON.parse(await new Response(stream).text());
 }
 
+// Audio: [IV][ciphertext], no gzip.
+async function decryptRaw(buf) {
+  const u8 = new Uint8Array(buf);
+  return crypto.subtle.decrypt({ name: 'AES-GCM', iv: u8.slice(0, 12) }, S.key, u8.slice(12));
+}
+
 async function getBin(url, opts) {
   const r = await fetch(url, opts);
   if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -228,7 +234,9 @@ async function load(pass) {
     pruneRead();
     route();
     prefetch();
-    navigator.serviceWorker?.controller?.postMessage({ type: 'keep', ids: Object.keys(index.items) });
+    Radio.prefetch();
+    if (Radio.enabled() && Radio.pending()) Radio.watch();
+    navigator.serviceWorker?.controller?.postMessage({ type: 'keep', ids: Object.keys(index.items), bulletin: S.meta?.bulletin?.id || '' });
   } catch (e) {
     console.error(e);
     if (S.index) toast('Nema veze. Prikazujem sačuvane vesti.');
@@ -731,7 +739,7 @@ function renderList() {
         <button class="pill-btn" data-act="install">Instaliraj</button><button class="x" data-act="install-dismiss" aria-label="Zatvori">×</button></div>` : ''}
       ${tabs('seg-tabs')}
       ${chips}
-      ${S.tab === 'top' && !S.cat ? briefCard() : ''}
+      ${S.tab === 'top' && !S.cat ? radioCard() + briefCard() : ''}
       <div class="list-tools"><span>${list.length} vesti</span><button class="link-btn" data-act="allread">Označi sve kao pročitano</button></div>
       ${shown.length ? `<ul class="list">${cards}</ul>` : `<p class="empty">${S.prefs.readMode === 'hide' ? 'Sve vesti su pročitane. Nove stižu svakih 30 minuta.' : 'Nema vesti za prikaz.'}</p>`}
       ${list.length > S.limit ? `<button class="more" data-act="more">Prikaži još (${list.length - S.limit})</button>` : ''}
@@ -1180,6 +1188,287 @@ async function waitForBuild(since) {
   }
 }
 
+/* ---------- radio bulletin (owner only for now) ----------
+   The build makes it on workday mornings or on request (scripts/bulletin.mjs): data/bulletin/<id>.bin holds the
+   script and segment starts, <id>.audio.bin the MP3 (Google voice). meta.json carries its metadata. Played with a
+   real <audio> element, so it keeps going with the screen locked and shows lock-screen / car controls. */
+const Radio = {
+  audio: null,
+  data: null,
+  url: null,
+  id: null,
+  seg: 0,
+
+  enabled: () => !!store.get('owner'),
+  info: () => S.meta?.bulletin || null,
+  ready() {
+    const b = this.info();
+    return b && b.id ? b : null;
+  },
+  pending() {
+    const at = store.get('radioReqAt', 0);
+    if (!at || Date.now() - at > 15 * 60e3) return 0;
+    const b = this.info();
+    if (b && (b.generated > at || (b.errorAt || 0) > at)) return 0;
+    return at;
+  },
+
+  async load() {
+    const b = this.ready();
+    if (!b) throw new Error('Nema biltena');
+    if (this.id !== b.id) {
+      this.data = await decrypt(await getBin(`data/bulletin/${b.id}.bin`));
+      if (this.url) URL.revokeObjectURL(this.url);
+      this.url = null;
+      if (b.audio) {
+        const raw = await decryptRaw(await getBin(`data/bulletin/${b.id}.audio.bin`));
+        this.url = URL.createObjectURL(new Blob([raw], { type: 'audio/mpeg' }));
+      }
+      this.id = b.id;
+    }
+    return this.data;
+  },
+
+  async play() {
+    if (this.audio && this.id === this.ready()?.id) return this.toggle();
+    toast('Učitavam radio vesti…');
+    let data;
+    try {
+      data = await this.load();
+    } catch (e) {
+      return toast('Radio vesti nisu dostupne: ' + e.message);
+    }
+    Voice.stop();
+    track('radio-play');
+    if (!this.url) {
+      // No recording (voice key missing): read the script with the phone's voice.
+      const segs = data.segments.flatMap((sg, i) => Voice.chunks(sg.text, i, { label: sg.label }));
+      return Voice.start(segs, 'Radio vesti');
+    }
+    this.stop();
+    const a = new Audio(this.url);
+    this.audio = a;
+    const pos = store.get('radioPos');
+    if (pos?.id === this.id && pos.t > 5) a.currentTime = pos.t - 3;
+    a.addEventListener('timeupdate', () => this.tick());
+    a.addEventListener('play', () => (this.bar(), this.refreshCard()));
+    a.addEventListener('pause', () => (this.bar(), this.refreshCard()));
+    a.addEventListener('ended', () => {
+      store.set('radioPos', { id: this.id, t: 0 });
+      this.stop();
+      toast('Kraj radio vesti');
+    });
+    this.session();
+    try {
+      await a.play();
+    } catch (e) {
+      toast('Reprodukcija nije uspela: ' + e.message);
+    }
+    this.bar();
+  },
+  toggle() {
+    if (!this.audio) return;
+    this.audio.paused ? this.audio.play() : this.audio.pause();
+  },
+  stop() {
+    if (!this.audio) return;
+    this.audio.pause();
+    this.audio = null;
+    this.refreshCard();
+    document.querySelector('.player.radio')?.remove();
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none';
+  },
+  starts() {
+    const d = this.audio?.duration || 0;
+    return (this.data?.segments || []).map((sg) => (sg.start || 0) * d);
+  },
+  current() {
+    const t = this.audio?.currentTime || 0;
+    const st = this.starts();
+    let i = 0;
+    while (i + 1 < st.length && st[i + 1] <= t + 0.25) i++;
+    return i;
+  },
+  skip(dir) {
+    if (!this.audio) return;
+    const st = this.starts();
+    let i = this.current();
+    // "Back" within the first 3 s of a story goes to the previous one, otherwise to this story's start.
+    if (dir < 0 && this.audio.currentTime - st[i] > 3) i++;
+    const to = Math.min(Math.max(i + dir, 0), st.length - 1);
+    this.audio.currentTime = st[to] || 0;
+    this.tick();
+  },
+  tick() {
+    if (!this.audio) return;
+    const i = this.current();
+    const t = Math.floor(this.audio.currentTime);
+    if (t % 5 === 0) store.set('radioPos', { id: this.id, t });
+    if (i !== this.seg || !document.querySelector('.player.radio')) {
+      this.seg = i;
+      this.bar();
+      this.session();
+    }
+    const el = document.querySelector('.player.radio .pl-time');
+    if (el) el.textContent = `${fmtTime(this.audio.currentTime)} / ${fmtTime(this.audio.duration)}`;
+  },
+  label() {
+    const sg = this.data?.segments?.[this.seg];
+    const n = (this.data?.segments?.length || 2) - 2;
+    if (!sg) return '';
+    if (this.seg === 0 || this.seg > n) return lat(sg.label);
+    return `${this.seg}/${n} · ${lat(sg.label)}`;
+  },
+  session() {
+    if (!('mediaSession' in navigator)) return;
+    const ms = navigator.mediaSession;
+    ms.metadata = new MediaMetadata({
+      title: this.label() || 'Radio vesti',
+      artist: 'Radio vesti',
+      album: 'Pametniji čitač vesti',
+      artwork: [{ src: 'icon-192.png', sizes: '192x192', type: 'image/png' }],
+    });
+    ms.playbackState = this.audio && !this.audio.paused ? 'playing' : 'paused';
+    const set = (k, fn) => {
+      try {
+        ms.setActionHandler(k, fn);
+      } catch {}
+    };
+    set('play', () => this.audio?.play());
+    set('pause', () => this.audio?.pause());
+    set('stop', () => this.stop());
+    set('previoustrack', () => this.skip(-1));
+    set('nexttrack', () => this.skip(1));
+    set('seekbackward', () => this.audio && (this.audio.currentTime -= 15));
+    set('seekforward', () => this.audio && (this.audio.currentTime += 30));
+  },
+  bar() {
+    if (!this.audio) return;
+    let el = document.querySelector('.player.radio');
+    if (!el) {
+      document.querySelector('.player')?.remove();
+      el = document.createElement('div');
+      el.className = 'player radio';
+      el.innerHTML = `<div class="pl-txt"><b>Radio vesti <span class="pl-time"></span></b><span></span></div>
+        <button data-pl="prev" aria-label="Prethodna vest">${I.prev}</button>
+        <button data-pl="toggle" class="pl-main" aria-label="Pauza"></button>
+        <button data-pl="next" aria-label="Sledeća vest">${I.next}</button>
+        <button data-pl="stop" aria-label="Zaustavi">×</button>`;
+      el.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-pl]');
+        if (!b) return;
+        const a = b.dataset.pl;
+        if (a === 'toggle') this.toggle();
+        else if (a === 'stop') this.stop();
+        else this.skip(a === 'next' ? 1 : -1);
+      });
+      document.body.appendChild(el);
+    }
+    el.querySelector('.pl-txt > span').textContent = this.label();
+    el.querySelector('.pl-main').innerHTML = this.audio.paused ? I.play : I.pause;
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = this.audio.paused ? 'paused' : 'playing';
+  },
+
+  // Ask GitHub for a build that makes a bulletin now (~5-8 min), then watch meta.json for it.
+  async request() {
+    const idx = S.index;
+    if (this.pending()) return toast('Radio vesti se već pripremaju…');
+    if (!idx?.dispatch || !idx.repo) return toast('Pravljenje na zahtev nije podešeno');
+    try {
+      const r = await fetch(`https://api.github.com/repos/${idx.repo}/actions/workflows/update.yml/dispatches`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${idx.dispatch}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ref: 'main', inputs: { bulletin: 'now' } }),
+      });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+    } catch (e) {
+      return toast('Nije uspelo pokretanje: ' + e.message);
+    }
+    store.set('radioReqAt', Date.now());
+    track('radio-request');
+    toast('Pripremam radio vesti, oko 7 minuta');
+    this.refreshCard();
+    this.watch();
+  },
+  async watch() {
+    if (this.watching) return;
+    this.watching = true;
+    try {
+      while (this.pending()) {
+        await new Promise((r) => setTimeout(r, 20000));
+        try {
+          const m = await (await fetch('data/meta.json', { cache: 'no-store' })).json();
+          const at = store.get('radioReqAt', 0);
+          const b = m.bulletin;
+          if (b && b.generated > at) {
+            S.meta = m;
+            this.refreshCard();
+            toast('Radio vesti su spremne');
+            break;
+          }
+          if (b && (b.errorAt || 0) > at) {
+            S.meta = m;
+            this.refreshCard();
+            toast('Pravljenje radio vesti nije uspelo');
+            break;
+          }
+        } catch {}
+        this.refreshCard();
+      }
+      if (store.get('radioReqAt', 0) && !this.pending() && Date.now() - store.get('radioReqAt', 0) > 15 * 60e3) this.refreshCard();
+    } finally {
+      this.watching = false;
+    }
+  },
+  refreshCard() {
+    const el = document.querySelector('.radio-card');
+    if (el) el.outerHTML = radioCard();
+  },
+  // On Wi-Fi/normal data, fetch today's recording in the background so it plays offline in the car.
+  prefetch() {
+    const b = this.ready();
+    if (!this.enabled() || !b?.audio || navigator.connection?.saveData) return;
+    fetch(`data/bulletin/${b.id}.audio.bin`).catch(() => {});
+    fetch(`data/bulletin/${b.id}.bin`).catch(() => {});
+  },
+};
+
+function fmtTime(sec) {
+  if (!isFinite(sec)) return '';
+  const m = Math.floor(sec / 60);
+  return `${m}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+}
+
+function radioCard() {
+  if (!Radio.enabled()) return '';
+  const b = Radio.info();
+  const ready = Radio.ready();
+  const pend = Radio.pending();
+  let sub, main;
+  if (pend) {
+    const min = Math.floor((Date.now() - pend) / 60e3);
+    sub = `Pripremam nove… ${min ? `${min} min od ukupno oko 7` : 'oko 7 min'}`;
+  } else if (ready) {
+    const g = new Date(ready.generated);
+    const today = dayKey() === ready.date;
+    const when = today ? `danas u ${g.toLocaleTimeString('sr-Latn-RS', { hour: '2-digit', minute: '2-digit' })}` : g.toLocaleDateString('sr-Latn-RS', { weekday: 'long', day: 'numeric', month: 'numeric' });
+    sub = `${when} · ${ready.minutes} min${ready.audio ? '' : ' · glas telefona'}`;
+  } else sub = 'Još nema biltena';
+  const failed = b?.errorAt && (!ready || b.errorAt > ready.generated) && !pend;
+  if (ready && !pend) main = `<button class="rc-play" data-act="radio-play" aria-label="Pusti radio vesti">${Radio.audio && !Radio.audio.paused ? I.pause : I.play}</button>`;
+  else main = pend ? '<span class="rc-spin"></span>' : '';
+  return `<div class="radio-card">
+    ${main}
+    <div class="rc-txt"><b>Radio vesti</b><span>${esc(sub)}</span>${failed ? '<span class="rc-err">Poslednji pokušaj nije uspeo</span>' : ''}</div>
+    ${pend ? '' : `<button class="rc-make" data-act="radio-make">${ready ? 'Nove' : 'Napravi'}</button>`}
+  </div>`;
+}
+
 /* ---------- share one article ---------- */
 async function shareArticle() {
   const [, , itemId] = (location.hash || '').split('/');
@@ -1262,6 +1551,7 @@ const Voice = {
 
   async start(segments, title) {
     if (!this.supported) return toast('Ovaj pregledač ne podržava čitanje naglas');
+    if (title !== 'Radio vesti') Radio.stop();
     this.stop(true);
     this.q = segments;
     this.i = 0;
@@ -1348,13 +1638,13 @@ const Voice = {
     this.wake?.release?.().catch(() => {});
     this.wake = null;
     if (!silent) {
-      document.querySelector('.player')?.remove();
+      document.querySelector('.player:not(.radio)')?.remove();
       document.querySelectorAll('.speaking').forEach((el) => el.classList.remove('speaking'));
     }
   },
 
   bar() {
-    let el = document.querySelector('.player');
+    let el = document.querySelector('.player:not(.radio)');
     if (!el) {
       el = document.createElement('div');
       el.className = 'player';
@@ -1771,6 +2061,10 @@ app.addEventListener('click', (e) => {
     }
     case 'listen-saved':
       return readSavedAloud();
+    case 'radio-play':
+      return Radio.play();
+    case 'radio-make':
+      return Radio.request();
     case 'listen-brief':
       e.preventDefault();
       if (!location.hash.startsWith('#/brief')) location.hash = '#/brief';

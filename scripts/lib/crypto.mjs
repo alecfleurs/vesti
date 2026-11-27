@@ -30,3 +30,13 @@ export async function encryptJson(key, obj) {
   out.set(ct, 12);
   return out;
 }
+
+// Raw bytes (audio): [12-byte IV][ciphertext], no gzip (MP3 doesn't compress).
+export async function encryptBytes(key, bytes) {
+  const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await subtle.encrypt({ name: 'AES-GCM', iv }, key, bytes));
+  const out = new Uint8Array(12 + ct.length);
+  out.set(iv);
+  out.set(ct, 12);
+  return out;
+}

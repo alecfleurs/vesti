@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: '7,37 * * * *'   # every 30 min; GitHub may delay scheduled runs by a few minutes
   workflow_dispatch:
+    inputs:
+      bulletin:
+        description: 'Radio bulletin: auto (workday mornings) or now (make one in this run)'
+        type: choice
+        options: [auto, now]
+        default: auto
   push:
     branches: [main]
 
@@ -47,6 +53,18 @@ jobs:
           DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/build.mjs
+
+      # Radio bulletin: workday mornings (06:30-07:40 Belgrade) or on demand from the app. Never fails the build.
+      - name: Radio bulletin
+        continue-on-error: true
+        timeout-minutes: 12
+        env:
+          BULLETIN: ${{ github.event_name == 'workflow_dispatch' && inputs.bulletin || 'auto' }}
+          SITE: dist
+          NEWS_KEY: ${{ secrets.NEWS_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_TTS_KEY: ${{ secrets.GOOGLE_TTS_KEY }}
+        run: node scripts/bulletin.mjs
 
       - name: Save state
         if: always()

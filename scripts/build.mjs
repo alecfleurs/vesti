@@ -14,6 +14,7 @@ import { buildBrief } from './lib/brief.mjs';
 import { deriveKey, encryptJson, randomSalt, ITERATIONS } from './lib/crypto.mjs';
 import { truncate, fold } from './lib/text.mjs';
 import { findProblems, syncIssues } from './lib/health.mjs';
+import { publishBulletin } from './lib/bulletin-store.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const CACHE = path.join(ROOT, '.cache');
@@ -347,6 +348,8 @@ await writeFile(
 );
 await writeFile(path.join(CACHE, 'state.json'), JSON.stringify(state));
 log(`wrote dist: index + ${bodies} articles`);
+const bul = await publishBulletin(CACHE, DIST, state.salt);
+if (bul) log(`bulletin: ${bul.id || '-'}${bul.error ? ` (last attempt failed: ${bul.error})` : ''}`);
 
 await syncIssues(findProblems(sources, state, now), log);
 

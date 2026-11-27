@@ -1,5 +1,5 @@
 // Offline support. App shell: stale-while-revalidate. Index: network first. Articles: cache first.
-const SHELL = 'vesti-shell-v17';
+const SHELL = 'vesti-shell-v18';
 const DATA = 'vesti-data-v1';
 const SHELL_FILES = ['./', 'index.html', 'app.js', 'styles.css', 'manifest.webmanifest', 'icon.svg', 'logo.svg', 'changelog.json', 'icon-192.png', 'fonts/inter-400.woff', 'fonts/inter-500.woff', 'fonts/inter-600.woff', 'fonts/inter-display-700.woff'];
 
@@ -21,8 +21,11 @@ self.addEventListener('message', async (e) => {
   const keep = new Set(e.data.ids);
   const cache = await caches.open(DATA);
   for (const req of await cache.keys()) {
-    const m = /\/data\/a\/([0-9a-f]+)\.bin$/.exec(new URL(req.url).pathname);
+    const path = new URL(req.url).pathname;
+    const m = /\/data\/a\/([0-9a-f]+)\.bin$/.exec(path);
     if (m && !keep.has(m[1])) await cache.delete(req);
+    const b = /\/data\/bulletin\/([\w-]+?)(\.audio)?\.bin$/.exec(path);
+    if (b && e.data.bulletin !== undefined && b[1] !== e.data.bulletin) await cache.delete(req);
   }
 });
 
@@ -47,7 +50,8 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  if (/\/data\/a\/[0-9a-f]+\.bin$/.test(p)) {
+  // Articles and radio bulletins never change once published: cache first.
+  if (/\/data\/a\/[0-9a-f]+\.bin$/.test(p) || /\/data\/bulletin\/[\w-]+\.bin$/.test(p)) {
     e.respondWith(
       (async () => {
         const cache = await caches.open(DATA);

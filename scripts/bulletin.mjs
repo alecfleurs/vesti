@@ -1,41 +1,83 @@
-// Radio-style news bulletin (test): Ukratko stories -> Gemini script (Serbian Cyrillic) -> Google Chirp 3 HD MP3.
+// Radio news bulletin: Ukratko stories -> Gemini script (Serbian Cyrillic) -> Google Chirp 3 HD MP3.
 //
-// Reads the live encrypted site (same data the app shows), so it needs no build state.
-// Env:
-//   NEWS_KEY        site password (decrypts index and articles)
-//   GEMINI_API_KEY  Google AI Studio key (free tier is enough)
-//   GOOGLE_TTS_KEY  Google Cloud API key with Cloud Text-to-Speech enabled (optional: without it only the script is made)
-//   SITE            default https://alecfleurs.github.io/vesti/
-//   VOICE           default sr-RS-Chirp3-HD-Aoede (female)
-//   MINUTES         target length, default 20
-//   GEMINI_MODEL    optional; otherwise the first available of MODELS below
-//   RATE            speaking rate, default 1.0
-//   DRY=1           stop after building the prompt (no API calls)
-// Output: out/bulletin/{bulletin.mp3, script.txt, prompt.txt, stories.json}
+// Two ways to run:
+//  - Inside the regular build (update.yml), after build.mjs: SITE=dist, BULLETIN=auto|now. The result is encrypted with
+//    the site key, kept in .cache/bulletin/ and published as dist/data/bulletin/<id>.bin (+ .audio.bin) with metadata in
+//    meta.json (see lib/bulletin-store.mjs). auto = once per workday between 06:30 and 07:40 Belgrade time; now = on demand
+//    (the app's "Napravi nove" button). A failure never fails the build: the previous bulletin stays and meta gets the error.
+//  - Manual test (bulletin.yml): SITE = live site URL, BULLETIN=test, files in out/bulletin.
+// Env: NEWS_KEY, GEMINI_API_KEY, GOOGLE_TTS_KEY (optional: without it the app reads the script with the phone's voice),
+//      VOICE (default sr-RS-Chirp3-HD-Aoede), MINUTES (20), RATE (1.0), GEMINI_MODEL, DRY=1 (prompt only).
 
 import { gunzipSync } from 'node:zlib';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { deriveKey } from './lib/crypto.mjs';
+import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { deriveKey, encryptJson, encryptBytes } from './lib/crypto.mjs';
+import { readInfo, writeInfo, saveBulletin, publishBulletin } from './lib/bulletin-store.mjs';
 
-const SITE = (process.env.SITE || 'https://alecfleurs.github.io/vesti/').replace(/\/?$/, '/');
+const MODE = process.env.BULLETIN || 'test';
+const RAW_SITE = process.env.SITE || 'https://alecfleurs.github.io/vesti/';
+const LOCAL = !/^https?:/.test(RAW_SITE);
+const SITE = LOCAL ? path.resolve(RAW_SITE) : RAW_SITE.replace(/\/?$/, '/');
+const CACHE = path.resolve(process.env.CACHE_DIR || '.cache');
 const VOICE = process.env.VOICE || 'sr-RS-Chirp3-HD-Aoede';
 const MINUTES = Number(process.env.MINUTES || 20);
 const RATE = Number(process.env.RATE || 1);
 const WPM = 130; // Serbian neural voices read about 130 words per minute
-const MODELS = process.env.GEMINI_MODEL ? [process.env.GEMINI_MODEL] : ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
+const MODELS = process.env.GEMINI_MODEL ? [process.env.GEMINI_MODEL] : ['gemini-3.6-flash', 'gemini-3.8-flash', 'gemini-flash-latest'];
 const OUT = 'out/bulletin';
 const log = (...a) => console.log('[bilten]', ...a);
 
+const belgrade = (d = new Date()) => {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Belgrade', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', weekday: 'short', hour12: false })
+      .formatToParts(d)
+      .map((x) => [x.type, x.value]),
+  );
+  return { date: `${p.year}-${p.month}-${p.day}`, hm: `${p.hour}${p.minute}`, weekday: p.weekday };
+};
+
+if (MODE === 'off') process.exit(0);
+if (MODE === 'auto') {
+  const t = belgrade();
+  const info = await readInfo(CACHE);
+  const workday = !['Sat', 'Sun'].includes(t.weekday);
+  const inWindow = t.hm >= '0630' && t.hm <= '0740';
+  if (!workday || !inWindow || info?.date === t.date) {
+    log(`not due (${t.weekday} ${t.hm}, last ${info?.date || 'none'})`);
+    process.exit(0);
+  }
+  log(`morning bulletin due (${t.weekday} ${t.hm})`);
+}
 if (!process.env.NEWS_KEY) throw new Error('NEWS_KEY is missing');
 mkdirSync(OUT, { recursive: true });
 
+// In the build a failure must not stop the deploy: log it, record it in meta.json, keep the previous bulletin.
+if (MODE === 'auto' || MODE === 'now') {
+  process.on('uncaughtException', async (e) => {
+    log('FAILED:', e.message);
+    try {
+      const info = (await readInfo(CACHE)) || {};
+      await writeInfo(CACHE, { ...info, error: e.message.slice(0, 200), errorAt: Date.now(), requested: MODE });
+      await publishBulletin(CACHE, SITE, JSON.parse(readFileSync(path.join(SITE, 'data', 'meta.json'), 'utf8')).salt);
+    } catch (e2) {
+      log('could not record the failure:', e2.message);
+    }
+    process.exit(0);
+  });
+}
+
 // ---------- read the encrypted site ----------
-const meta = await (await fetch(SITE + 'data/meta.json')).json();
+const readRaw = async (p) => {
+  if (LOCAL) return new Uint8Array(readFileSync(path.join(SITE, p)));
+  const res = await fetch(SITE + p);
+  if (!res.ok) throw new Error(`${p}: HTTP ${res.status}`);
+  return new Uint8Array(await res.arrayBuffer());
+};
+const meta = JSON.parse(new TextDecoder().decode(await readRaw('data/meta.json')));
 const key = await deriveKey(process.env.NEWS_KEY, meta.salt, meta.iter);
-async function getEnc(path) {
-  const res = await fetch(SITE + path);
-  if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
-  const buf = new Uint8Array(await res.arrayBuffer());
+async function getEnc(p) {
+  const buf = await readRaw(p);
   const plain = await globalThis.crypto.subtle.decrypt({ name: 'AES-GCM', iv: buf.slice(0, 12) }, key, buf.slice(12));
   return JSON.parse(gunzipSync(Buffer.from(plain)).toString('utf8'));
 }
@@ -232,10 +274,6 @@ writeFileSync(`${OUT}/script.txt`, segments.join('\n\n---\n\n') + '\n');
 log(`script: ${segments.length} segments, ${scriptWords} words (~${Math.round(scriptWords / WPM)} min), model ${usedModel}`);
 
 // ---------- Google Cloud TTS ----------
-if (!process.env.GOOGLE_TTS_KEY) {
-  log('GOOGLE_TTS_KEY missing: script only');
-  process.exit(0);
-}
 // Requests are capped at 5,000 bytes; Cyrillic is 2 bytes per letter, so chunks stay under ~1,800 characters.
 const chunksOf = (text) => {
   const out = [];
@@ -248,27 +286,65 @@ const chunksOf = (text) => {
   return out;
 };
 async function tts(text) {
-  const res = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${encodeURIComponent(process.env.GOOGLE_TTS_KEY)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      input: { text },
-      voice: { languageCode: 'sr-RS', name: VOICE },
-      audioConfig: { audioEncoding: 'MP3', speakingRate: RATE, sampleRateHertz: 24000 },
-    }),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`TTS: HTTP ${res.status} ${body.error?.message || ''}`);
-  return Buffer.from(body.audioContent, 'base64');
-}
-const parts = [];
-let chars = 0;
-for (const seg of segments) {
-  for (const ch of chunksOf(seg)) {
-    parts.push(await tts(ch));
-    chars += ch.length;
+  for (let attempt = 1; ; attempt++) {
+    const res = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${encodeURIComponent(process.env.GOOGLE_TTS_KEY)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input: { text },
+        voice: { languageCode: 'sr-RS', name: VOICE },
+        audioConfig: { audioEncoding: 'MP3', speakingRate: RATE, sampleRateHertz: 24000 },
+      }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.ok) return Buffer.from(body.audioContent, 'base64');
+    if (attempt < 3 && (res.status === 429 || res.status >= 500)) {
+      await new Promise((r) => setTimeout(r, attempt * 5e3));
+      continue;
+    }
+    throw new Error(`TTS: HTTP ${res.status} ${body.error?.message || ''}`);
   }
 }
-const mp3 = Buffer.concat(parts); // MP3 frames concatenate cleanly
-writeFileSync(`${OUT}/bulletin.mp3`, mp3);
-log(`audio: ${parts.length} requests, ${chars} characters, ${(mp3.length / 1e6).toFixed(1)} MB, voice ${VOICE}`);
+let mp3 = null;
+const segBytes = [];
+if (process.env.GOOGLE_TTS_KEY) {
+  const parts = [];
+  let chars = 0;
+  for (const seg of segments) {
+    let n = 0;
+    for (const ch of chunksOf(seg)) {
+      const b = await tts(ch);
+      parts.push(b);
+      n += b.length;
+      chars += ch.length;
+    }
+    segBytes.push(n);
+  }
+  mp3 = Buffer.concat(parts); // MP3 frames concatenate cleanly
+  writeFileSync(`${OUT}/bulletin.mp3`, mp3);
+  log(`audio: ${parts.length} requests, ${chars} characters, ${(mp3.length / 1e6).toFixed(1)} MB, voice ${VOICE}`);
+} else log('GOOGLE_TTS_KEY missing: script only (the app reads it with the phone voice)');
+
+if (MODE === 'auto' || MODE === 'now') {
+  const t = belgrade();
+  const id = `${t.date}-${t.hm}`;
+  // Each segment's start as a share of the audio (MP3 is constant bitrate, so bytes track time).
+  let acc = 0;
+  const total = segBytes.reduce((a, b) => a + b, 0) || 1;
+  const label = (txt, i) =>
+    i === 0 ? 'Uvod' : i === segments.length - 1 ? 'Odjava' : txt.split(/(?<=[.!?…])\s/)[0].slice(0, 90);
+  const segs = segments.map((text, i) => {
+    const start = mp3 ? acc / total : null;
+    acc += segBytes[i] || 0;
+    return { text, label: label(text, i), start };
+  });
+  const data = { id, date: t.date, generated: Date.now(), model: usedModel, voice: mp3 ? VOICE : null, segments: segs, stories: stories.map((s) => ({ rank: s.rank, sources: s.versions.map((v) => ({ source: v.source, title: v.title, url: v.url })) })) };
+  await saveBulletin(
+    CACHE,
+    { id, date: t.date, generated: data.generated, minutes: Math.round(scriptWords / WPM), audio: !!mp3, bytes: mp3?.length || 0, segments: segs.length, requested: MODE, salt: meta.salt },
+    await encryptJson(key, data),
+    mp3 ? await encryptBytes(key, mp3) : null,
+  );
+  const pub = await publishBulletin(CACHE, SITE, meta.salt);
+  log(`published bulletin ${pub.id} (${pub.minutes} min, audio ${pub.audio ? 'yes' : 'no'})`);
+}
