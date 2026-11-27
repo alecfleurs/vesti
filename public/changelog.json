@@ -5,19 +5,19 @@
     "title": "Ispravke",
     "items": [
       [
-        "Ispravljeno",
+        "Ispravka",
         "Sačuvano se ponovo otvara. U 2.6 se ta strana nije učitavala."
       ],
       [
-        "Ispravljeno",
+        "Ispravka",
         "Strelica nazad u članku uvek vraća na listu, i kada se između vesti krećeš preko Toka priče, Kako ko piše ili pokretom nazad na telefonu."
       ],
       [
-        "Ispravljeno",
+        "Ispravka",
         "Sačuvaj uvek čuva vest koja je otvorena, i kada brzo prelaziš s vesti na vest."
       ],
       [
-        "Ispravljeno",
+        "Ispravka",
         "Podeli radi i za sačuvane vesti, a dvostruki dodir više ne otvara drugi prozor za deljenje."
       ]
     ]
