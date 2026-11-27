@@ -64,6 +64,8 @@ jobs:
           NEWS_KEY: ${{ secrets.NEWS_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GOOGLE_TTS_KEY: ${{ secrets.GOOGLE_TTS_KEY }}
+          AZURE_SPEECH_KEY: ${{ secrets.AZURE_SPEECH_KEY }}
+          AZURE_SPEECH_REGION: northeurope
         run: node scripts/bulletin.mjs
 
       - name: Save state

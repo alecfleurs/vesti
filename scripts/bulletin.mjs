@@ -23,8 +23,10 @@ const SITE = LOCAL ? path.resolve(RAW_SITE) : RAW_SITE.replace(/\/?$/, '/');
 const CACHE = path.resolve(process.env.CACHE_DIR || '.cache');
 // Voice engine: Google Cloud Chirp 3 HD when GOOGLE_TTS_KEY is set (needs Cloud billing), otherwise Gemini speech on the
 // same free AI Studio key as the script (no card). TTS_ENGINE=cloud|gemini|none overrides.
-const ENGINE = process.env.TTS_ENGINE || (process.env.GOOGLE_TTS_KEY ? 'cloud' : process.env.GEMINI_API_KEY ? 'gemini' : 'none');
-const VOICE = process.env.VOICE || (ENGINE === 'cloud' ? 'sr-RS-Chirp3-HD-Aoede' : 'Kore');
+// Preferred: Azure Speech (free F0 tier, sr-RS-SophieNeural) when AZURE_SPEECH_KEY is set.
+const ENGINE = process.env.TTS_ENGINE || (process.env.AZURE_SPEECH_KEY ? 'azure' : process.env.GOOGLE_TTS_KEY ? 'cloud' : process.env.GEMINI_API_KEY ? 'gemini' : 'none');
+const VOICE = process.env.VOICE || { azure: 'sr-RS-SophieNeural', cloud: 'sr-RS-Chirp3-HD-Aoede' }[ENGINE] || 'Kore';
+const AZURE_REGION = process.env.AZURE_SPEECH_REGION || 'northeurope';
 const TTS_MODELS = process.env.GEMINI_TTS_MODEL ? [process.env.GEMINI_TTS_MODEL] : ['gemini-3.1-flash-tts-preview'];
 const MINUTES = Number(process.env.MINUTES || 20);
 const RATE = Number(process.env.RATE || 1);
@@ -364,10 +366,72 @@ function pcmToMp3(pcm) {
   return execFileSync('ffmpeg', ['-loglevel', 'error', '-f', 's16le', '-ar', '24000', '-ac', '1', '-i', 'pipe:0', '-c:a', 'libmp3lame', '-b:a', '48k', '-f', 'mp3', 'pipe:1'], { input: pcm, maxBuffer: 200e6 });
 }
 
+// Azure Speech: one request per story (SSML, MP3 48 kbps), a short pause after each. The free tier allows
+// 20 requests a minute and 0.5M characters a month; when it says no (quota), publish the script only.
+const xml = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+async function azureSpeech(text) {
+  const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="sr-RS"><voice name="${VOICE}"><prosody rate="${Math.round((RATE - 1) * 100)}%">${xml(text)}</prosody><break time="900ms"/></voice></speak>`;
+  for (let attempt = 1; ; attempt++) {
+    let res;
+    try {
+      res = await fetch(`https://${AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`, {
+        method: 'POST',
+        headers: {
+          'Ocp-Apim-Subscription-Key': process.env.AZURE_SPEECH_KEY,
+          'Content-Type': 'application/ssml+xml',
+          'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3',
+          'User-Agent': 'vesti-bilten',
+        },
+        body: ssml,
+      });
+    } catch (e) {
+      if (attempt < 3) {
+        await new Promise((r) => setTimeout(r, attempt * 5e3));
+        continue;
+      }
+      throw new Error(`Azure speech: network ${e.cause?.code || e.message}`);
+    }
+    if (res.ok) return Buffer.from(await res.arrayBuffer());
+    const msg = (await res.text().catch(() => '')).slice(0, 200);
+    // 429 on F0 is either the per-minute limit (wait and retry) or the monthly quota (give up).
+    if (res.status === 429 && attempt < 4 && !/quota/i.test(msg)) {
+      await new Promise((r) => setTimeout(r, 20e3));
+      continue;
+    }
+    if (res.status >= 500 && attempt < 3) {
+      await new Promise((r) => setTimeout(r, attempt * 5e3));
+      continue;
+    }
+    const err = new Error(`Azure speech: HTTP ${res.status} ${msg}`);
+    err.quota = res.status === 429 || res.status === 403;
+    throw err;
+  }
+}
+
 let mp3 = null;
 let ttsModel = null;
 const segBytes = [];
-if (ENGINE === 'cloud') {
+if (ENGINE === 'azure') {
+  const parts = [];
+  let chars = 0;
+  const t0 = Date.now();
+  try {
+    for (const [i, seg] of segments.entries()) {
+      if (i) await new Promise((r) => setTimeout(r, 3200)); // under 20 requests per minute
+      const b = await azureSpeech(seg);
+      parts.push(b);
+      segBytes.push(b.length);
+      chars += seg.length;
+    }
+    mp3 = Buffer.concat(parts);
+    ttsModel = `azure-${AZURE_REGION}`;
+    log(`audio: ${parts.length} requests in ${Math.round((Date.now() - t0) / 1000)} s, ${chars} characters, ${(mp3.length / 1e6).toFixed(1)} MB, voice ${VOICE}`);
+  } catch (e) {
+    log(`speech stopped (${e.message}); publishing the script only`);
+    segBytes.length = 0;
+    mp3 = null;
+  }
+} else if (ENGINE === 'cloud') {
   const parts = [];
   let chars = 0;
   for (const seg of segments) {
