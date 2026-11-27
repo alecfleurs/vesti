@@ -37,7 +37,7 @@ const S = {
   lastLoad: 0,
 };
 
-const APP_VERSION = '2.6';
+const APP_VERSION = '2.6.1';
 const APP_BUILD = '__BUILD__'; // replaced at build time with commit + date
 
 const app = document.getElementById('app');
@@ -873,8 +873,8 @@ async function renderArticle(itemId, clusterId) {
   if (!it.x) return fallback('Pun tekst ovog članka nije dostupan (plaćeni sadržaj, video ili sajt blokira preuzimanje).');
   try {
     const a = saved?.html ? { html: saved.html, byline: saved.byline, image: saved.image } : await decrypt(await getBin(`data/a/${itemId}.bin`));
-    S.cur = { id: itemId, article: a };
     if (location.hash.split('/')[2] !== itemId) return; // user navigated away
+    S.cur = { id: itemId, article: a };
     const body = document.createElement('div');
     body.className = 'body';
     body.innerHTML = a.html;
@@ -1395,9 +1395,9 @@ function doseTile() {
 /* ---------- share one article ---------- */
 async function shareArticle() {
   const [, , itemId] = (location.hash || '').split('/');
-  const it = S.index?.items[itemId];
+  const it = S.index?.items[itemId] || savedAsItem(itemId);
   if (!it) return;
-  const src = srcById(it.s).name;
+  const src = (it._src || srcById(it.s)).name;
   // Prefer the opening paragraph of the article itself, else the feed lead.
   const firstP = [...document.querySelectorAll('.body p')].map((p) => p.textContent.trim()).find((t) => t.length > 60);
   const note = summarize(firstP || it.l, 240);
@@ -1408,7 +1408,7 @@ async function shareArticle() {
     try {
       return await navigator.share({ title, text: `${text}\n\nCeo tekst:`, url: it.u });
     } catch (e) {
-      if (e.name === 'AbortError') return;
+      if (e.name === 'AbortError' || e.name === 'InvalidStateError') return; // cancelled, or a share is already open
     }
   }
   const full = `${text}\n\nCeo tekst: ${it.u}`;
@@ -1678,6 +1678,15 @@ function savedOrder() {
     .map((id) => ({ id: 'saved:' + id, rep: id }));
 }
 
+// Plain text blocks of an article's HTML (innermost blocks only, so nothing is read twice).
+function htmlBlocks(html) {
+  const doc = new DOMParser().parseFromString(html || '', 'text/html');
+  doc.querySelectorAll('figure, figcaption, script, style, .gallery').forEach((el) => el.remove());
+  return [...doc.body.querySelectorAll('p, h2, h3, h4, li, blockquote')]
+    .filter((el) => !el.querySelector('p, li'))
+    .map((el) => el.textContent.trim())
+    .filter((t) => t.length > 2);
+}
 const savedText = (s) => (s.html ? htmlBlocks(s.html) : [s.l].filter(Boolean));
 function savedListenMin(ids, all) {
   const words = ids.reduce((n, id) => n + 15 + savedText(all[id]).join(' ').split(/\s+/).length, 0);
@@ -1790,13 +1799,22 @@ function route() {
   const h = location.hash || '#/';
   const isArt = (x) => (x || '').startsWith('#/a/');
   // Remember which screen a story was opened from, and how many history steps lead back to it.
+  // The depth is stored in each history entry, so the phone's own back gesture can't throw the count off.
+  const known = history.state && typeof history.state.depth === 'number' ? history.state.depth : null;
   if (isArt(h) && !isArt(current)) {
     S.from = current || '#/';
-    S.hops = 1;
     S.ctx = { '#/brief': 'brief', '#/search': 'search', '#/saved': 'saved' }[current] || 'list';
-  } else if (isArt(h) && isArt(current) && h !== current && !S.replacing) S.hops = (S.hops || 0) + 1;
-  else if (!isArt(h)) S.hops = 0;
+  }
+  if (!isArt(h)) S.hops = 0;
+  else if (known !== null) S.hops = known;
+  else if (S.replacing) S.hops = S.hops || 1;
+  else S.hops = isArt(current) ? (S.hops || 0) + 1 : 1;
   S.replacing = false;
+  if (history.state?.depth !== S.hops) {
+    try {
+      history.replaceState({ ...(history.state || {}), depth: S.hops }, '');
+    } catch {}
+  }
   if (isListHash(current) && !isListHash(h)) {
     S.listScroll = window.scrollY;
     S.leftFrom = h.split('/')[3] || null;
@@ -1900,8 +1918,8 @@ app.addEventListener('click', (e) => {
       return window.scrollTo({ top: 0, behavior: 'smooth' });
     case 'back':
       e.preventDefault();
-      if (S.hops > 0 && history.length > S.hops) history.go(-S.hops); // back to the list or Ukratko, scroll kept
-      else location.hash = S.from || '#/';
+      if (S.hops > 0 && history.length > S.hops) history.go(-S.hops); // back to the list or Pregled dana, scroll kept
+      else location.replace(S.from || '#/');
       return;
     case 'voice-test':
       return Voice.start(Voice.chunks('Dobro jutro. Ovo je Pametniji čitač vesti. Ovako zvuči glas telefona kada čita članak.', 0, { label: 'Proba glasa' }), 'Proba glasa');
@@ -1918,12 +1936,12 @@ app.addEventListener('click', (e) => {
     case 'radio-play':
       return Radio.play();
     case 'save': {
-      const id = S.cur?.id;
+      const id = location.hash.split('/')[2] || S.cur?.id;
       if (!id) return;
       if (isSaved(id)) {
         unsaveArticle(id);
         toast('Uklonjeno iz Sačuvanog');
-      } else saveArticle(id, S.cur.article);
+      } else saveArticle(id, S.cur?.id === id ? S.cur.article : null);
       const on = isSaved(id);
       t.classList.toggle('on', on);
       t.innerHTML = `${on ? I.bookmarkOn : I.bookmark}<span>${on ? 'Sačuvano' : 'Sačuvaj'}</span>`;
@@ -2140,7 +2158,7 @@ async function doShare() {
     try {
       return await navigator.share({ title: 'Vesti', text, url });
     } catch (e) {
-      if (e.name === 'AbortError') return;
+      if (e.name === 'AbortError' || e.name === 'InvalidStateError') return; // cancelled, or a share is already open
     }
   }
   try {

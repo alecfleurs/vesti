@@ -1,5 +1,28 @@
 [
   {
+    "v": "2.6.1",
+    "date": "27. 11. 2026.",
+    "title": "Ispravke",
+    "items": [
+      [
+        "Ispravljeno",
+        "Sačuvano se ponovo otvara. U 2.6 se ta strana nije učitavala."
+      ],
+      [
+        "Ispravljeno",
+        "Strelica nazad u članku uvek vraća na listu, i kada se između vesti krećeš preko Toka priče, Kako ko piše ili pokretom nazad na telefonu."
+      ],
+      [
+        "Ispravljeno",
+        "Sačuvaj uvek čuva vest koja je otvorena, i kada brzo prelaziš s vesti na vest."
+      ],
+      [
+        "Ispravljeno",
+        "Podeli radi i za sačuvane vesti, a dvostruki dodir više ne otvara drugi prozor za deljenje."
+      ]
+    ]
+  },
+  {
     "v": "2.6",
     "date": "27. 11. 2026.",
     "title": "Jutarnja doza",
