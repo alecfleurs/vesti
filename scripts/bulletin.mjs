@@ -25,7 +25,7 @@ const CACHE = path.resolve(process.env.CACHE_DIR || '.cache');
 // same free AI Studio key as the script (no card). TTS_ENGINE=cloud|gemini|none overrides.
 const ENGINE = process.env.TTS_ENGINE || (process.env.GOOGLE_TTS_KEY ? 'cloud' : process.env.GEMINI_API_KEY ? 'gemini' : 'none');
 const VOICE = process.env.VOICE || (ENGINE === 'cloud' ? 'sr-RS-Chirp3-HD-Aoede' : 'Kore');
-const TTS_MODELS = process.env.GEMINI_TTS_MODEL ? [process.env.GEMINI_TTS_MODEL] : ['gemini-3.1-flash-tts-preview', 'gemini-2.5-flash-preview-tts'];
+const TTS_MODELS = process.env.GEMINI_TTS_MODEL ? [process.env.GEMINI_TTS_MODEL] : ['gemini-3.1-flash-tts-preview'];
 const MINUTES = Number(process.env.MINUTES || 20);
 const RATE = Number(process.env.RATE || 1);
 const WPM = 130; // Serbian neural voices read about 130 words per minute
@@ -346,6 +346,11 @@ async function geminiSpeech(text) {
       }
       last = `${model}: HTTP ${res.status} ${body.error?.message || body.candidates?.[0]?.finishReason || 'no audio'}`;
       log('speech', last);
+      if (res.status === 429 && /quota/i.test(body.error?.message || '')) {
+        const err = new Error(`Gemini speech quota exhausted (${model})`);
+        err.quota = true;
+        throw err;
+      }
       if (res.status === 429 || res.status >= 500) {
         await new Promise((r) => setTimeout(r, attempt * 30e3));
         continue;
@@ -390,6 +395,7 @@ if (ENGINE === 'cloud') {
   const t0 = Date.now();
   const skipped = new Set();
   let calls = 0;
+  let quotaHit = false;
   const speak = async (txt) => {
     if (calls++) await new Promise((r) => setTimeout(r, 4000)); // stay under the free tier's per-minute limit
     return geminiSpeech(txt);
@@ -402,6 +408,11 @@ if (ENGINE === 'cloud') {
       for (const i of g.idx) segBytes[i] = (pcm.length * segments[i].length) / g.chars;
       log(`speech ${gi + 1}/${groups.length}: ${g.chars} chars -> ${(pcm.length / 48000).toFixed(0)} s (${model})`);
     } catch (e) {
+      if (e.quota || Date.now() - t0 > 8 * 60e3) {
+        log(`speech stopped: ${e.quota ? 'free quota used up' : 'took too long'}; publishing the script only`);
+        pcms.length = 0;
+        break;
+      }
       // One refused story shouldn't sink the bulletin: read the group's stories one by one, skip the ones that still fail.
       log(`speech ${gi + 1}/${groups.length} failed (${e.message}); trying story by story`);
       for (const i of g.idx) {
@@ -411,18 +422,28 @@ if (ENGINE === 'cloud') {
           pcms.push(pcm);
           segBytes[i] = pcm.length;
         } catch (e2) {
+          if (e2.quota) {
+            quotaHit = true;
+            break;
+          }
           skipped.add(i);
           segBytes[i] = 0;
           log(`  skipped segment ${i}: ${e2.message}`);
         }
       }
+      if (quotaHit) {
+        log('speech stopped: free quota used up; publishing the script only');
+        pcms.length = 0;
+        break;
+      }
     }
   }
-  if (!pcms.length) throw new Error('Gemini speech produced no audio');
-  if (skipped.size) log(`skipped ${skipped.size} of ${segments.length} segments`);
-  for (const i of [...skipped].sort((x, y) => y - x)) segments.splice(i, 1), segBytes.splice(i, 1);
-  mp3 = pcmToMp3(Buffer.concat(pcms));
-  log(`audio: ${groups.length} requests in ${Math.round((Date.now() - t0) / 1000)} s, ${(mp3.length / 1e6).toFixed(1)} MB, voice ${VOICE}, ${ttsModel}`);
+  if (pcms.length) {
+    if (skipped.size) log(`skipped ${skipped.size} of ${segments.length} segments`);
+    for (const i of [...skipped].sort((x, y) => y - x)) segments.splice(i, 1), segBytes.splice(i, 1);
+    mp3 = pcmToMp3(Buffer.concat(pcms));
+  } else segBytes.length = 0;
+  if (mp3) log(`audio: ${groups.length} requests in ${Math.round((Date.now() - t0) / 1000)} s, ${(mp3.length / 1e6).toFixed(1)} MB, voice ${VOICE}, ${ttsModel}`);
 } else log('no voice key: script only (the app reads it with the phone voice)');
 if (mp3) writeFileSync(`${OUT}/bulletin.mp3`, mp3);
 
