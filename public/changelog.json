@@ -1,5 +1,24 @@
 [
   {
+    "v": "2.2",
+    "date": "27. 11. 2026.",
+    "title": "Najnovije kao vremenska linija, povratak na isto mesto",
+    "items": [
+      [
+        "Promena",
+        "Najnovije je sada prava vremenska linija: vest stoji tamo gde se prvi put pojavila. Kada neki medij kasnije objavi istu vest, ona se više ne vraća na vrh, a vreme na kartici je vreme prve objave."
+      ],
+      [
+        "Ispravka",
+        "Posle čitanja članka i povratka nazad, lista se vraća tačno na mesto gde si bio, a ne na vrh."
+      ],
+      [
+        "Ispravka",
+        "Kartice sa slikom koja ne može da se učita više ne menjaju visinu pri povratku na listu."
+      ]
+    ]
+  },
+  {
     "v": "2.1",
     "date": "26. 11. 2026.",
     "title": "Poslušaj Ukratko u celosti",

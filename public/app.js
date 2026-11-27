@@ -37,7 +37,7 @@ const S = {
   lastLoad: 0,
 };
 
-const APP_VERSION = '2.1';
+const APP_VERSION = '2.2';
 const APP_BUILD = '__BUILD__'; // replaced at build time with commit + date
 
 const app = document.getElementById('app');
@@ -290,7 +290,8 @@ function threadSteps(th) {
 
 function ranked() {
   const list = viewClusters().filter((c) => !S.cat || c.cat === S.cat);
-  if (S.tab === 'new') return list.sort((a, b) => b.l - a.l);
+  // Najnovije is a timeline: a story stays where it first broke, later reports don't lift it back up.
+  if (S.tab === 'new') return list.sort((a, b) => (b.f || b.l) - (a.f || a.l));
   const now = Date.now();
   return list
     .filter((c) => now - c.l < (S.cat ? 14 * 24 : 30) * 3600e3)
@@ -551,8 +552,14 @@ const imgKey = (src) => {
     return src;
   }
 };
+// Broken image URLs are remembered for the session, so re-rendering the list doesn't shrink cards again.
+const badImgs = new Set();
+window.vImgErr = (el) => {
+  badImgs.add(el.getAttribute('src'));
+  el.remove();
+};
 const imgTag = (src, cls) =>
-  src ? `<img class="${cls}" src="${esc(src)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()">` : '';
+  src && !badImgs.has(src) ? `<img class="${cls}" src="${esc(src)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="vImgErr(this)">` : '';
 
 function sourceBadge(c, src) {
   const others = c.srcs.length - 1;
@@ -628,7 +635,7 @@ function renderList() {
       const fresh = S.read[c.id] && un;
       const img = bigImg(it) || c.items.map((id) => bigImg(idx.items[id])).find(Boolean) || '';
       const lead = i === 0 && S.tab === 'top' && thumbs && img && un;
-      const meta = `<div class="meta">${fresh ? '<span class="dot-new" title="Novi izvori"></span>' : ''}${sourceBadge(c, src)}<span>${ago(c.l)}</span>${c.steps ? `<span class="dev">${I.thread}Razvoj priče · ${c.steps.length}</span>` : ''}</div>`;
+      const meta = `<div class="meta">${fresh ? '<span class="dot-new" title="Novi izvori"></span>' : ''}${sourceBadge(c, src)}<span>${ago(S.tab === 'new' ? c.f || c.l : c.l)}</span>${c.steps ? `<span class="dev">${I.thread}Razvoj priče · ${c.steps.length}</span>` : ''}</div>`;
       const txt = `<div class="txt">${meta}<h2>${esc(lat(it.t))}</h2>${it.l ? `<p class="lead">${esc(lat(it.l))}</p>` : ''}</div>`;
       return lead
         ? `<li class="card lead-story" data-id="${c.id}"><a href="#/a/${c.rep}/${c.id}">${imgTag(img, 'hero-img')}${txt}</a></li>`
@@ -674,9 +681,20 @@ function renderList() {
   requestAnimationFrame(() => {
     window.scrollTo(0, S.listScroll);
     const card = S.lastStory && S.lastStory !== S.leftFrom && document.querySelector(`.card[data-id="${S.lastStory}"]`);
-    if (card) card.scrollIntoView({ block: 'center' });
+    if (card) card.scrollIntoView({ block: 'center' }); // swiped to another story: show that one
+    else if (S.listAnchor) {
+      // Put the opened card exactly where it was on screen, whatever changed above it.
+      const a = document.querySelector(`.card[data-id="${S.listAnchor.id}"]`);
+      if (a) window.scrollBy(0, a.getBoundingClientRect().top - S.listAnchor.top);
+    }
+    S.listAnchor = null;
     S.leftFrom = S.lastStory = null;
-    document.querySelector('.chips [aria-pressed="true"]')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+    // Center the selected chip by scrolling only the chip row (scrollIntoView would also move the page).
+    const chip = document.querySelector('.chips [aria-pressed="true"]');
+    if (chip) {
+      const row = chip.parentElement;
+      row.scrollLeft += chip.getBoundingClientRect().left - row.getBoundingClientRect().left - (row.clientWidth - chip.offsetWidth) / 2;
+    }
   });
 }
 
@@ -1497,6 +1515,8 @@ function route() {
   if (isListHash(current) && !isListHash(h)) {
     S.listScroll = window.scrollY;
     S.leftFrom = h.split('/')[3] || null;
+    const card = S.leftFrom && document.querySelector(`.card[data-id="${S.leftFrom}"]`);
+    S.listAnchor = card ? { id: S.leftFrom, top: card.getBoundingClientRect().top } : null;
   }
   current = h;
   const parts = h.slice(2).split('/');
@@ -1509,6 +1529,8 @@ function route() {
   if (parts[0] === 'changelog') return renderChangelog();
   renderList();
 }
+// The app restores list positions itself; the browser's own restore fires later and moves the page.
+if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 window.addEventListener('hashchange', route);
 
 /* ---------- events ---------- */
