@@ -30,14 +30,14 @@ const S = {
   cat: '',
   hidden: new Set(store.get('hidden', [])),
   read: store.get('read', {}),
-  prefs: Object.assign({ theme: 'auto', size: 18, latin: false }, store.get('prefs', {})),
+  prefs: Object.assign({ theme: 'auto', size: 18, latin: !store.get('prefs') }, store.get('prefs', {})), // new installs: Latin
   limit: 60,
   listScroll: 0,
   loading: false,
   lastLoad: 0,
 };
 
-const APP_VERSION = '2.3';
+const APP_VERSION = '2.4';
 const APP_BUILD = '__BUILD__'; // replaced at build time with commit + date
 
 const app = document.getElementById('app');
@@ -140,13 +140,20 @@ function savePrefs() {
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyPrefs);
 
-function toast(msg) {
+// Optional action button (e.g. "Vrati" to undo); the toast then stays a little longer.
+function toast(msg, label, fn) {
   document.querySelector('.toast')?.remove();
   const t = document.createElement('div');
   t.className = 'toast';
   t.textContent = msg;
+  if (label) {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.onclick = () => (t.remove(), fn());
+    t.appendChild(b);
+  }
   document.body.appendChild(t);
-  setTimeout(() => t.remove(), 2600);
+  setTimeout(() => t.remove(), label ? 5000 : 2600);
 }
 
 /* ---------- crypto ---------- */
@@ -561,12 +568,13 @@ window.vImgErr = (el) => {
 const imgTag = (src, cls) =>
   src && !badImgs.has(src) ? `<img class="${cls}" src="${esc(src)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="vImgErr(this)">` : '';
 
+// "N1" for one outlet; "(dots) N1 +3" when more outlets carry the story. The shown outlet's dot comes first.
 function sourceBadge(c, src) {
   const others = c.srcs.length - 1;
   if (others <= 0) return `<span class="src" style="--c:${esc(src.color)}">${esc(src.name)}</span>`;
-  const dots = c.srcs.slice(0, 4).map((id) => `<i style="--c:${esc(srcById(id).color || 'var(--faint)')}"></i>`).join('');
-  return `<span class="src" style="--c:${esc(src.color)}">${esc(src.name)}</span>
-    <span class="stack"><span class="dots">${dots}</span>${c.srcs.length} izvora</span>`;
+  const ids = [src.id, ...c.srcs.filter((id) => id !== src.id)].slice(0, 4);
+  const dots = ids.map((id) => `<i style="--c:${esc(srcById(id).color || 'var(--faint)')}"></i>`).join('');
+  return `<span class="srcs" aria-label="${c.srcs.length} izvora"><span class="dots">${dots}</span><b>${esc(src.name)}</b><span class="plus">+${others}</span></span>`;
 }
 
 function briefCard() {
@@ -651,14 +659,24 @@ function renderList() {
     .join('')}</div>`;
   const today = new Date().toLocaleDateString('sr-Latn-RS', { weekday: 'long', day: 'numeric', month: 'long' });
 
-  app.innerHTML = `<header class="home-head">
-      <div class="t"><div class="date">${esc(today.charAt(0).toUpperCase() + today.slice(1))}</div>
-        <h1>${esc(idx.title || 'Vesti')}</h1>
-        <div class="sub">Ažurirano ${ago(idx.generated)} · ${unread} nepročitanih</div></div>
-      <div class="actions"><a class="icon-btn" href="#/search" aria-label="Pretraga">${I.search}</a>
-        <a class="icon-btn" href="#/saved" aria-label="Sačuvano">${I.bookmark}</a>
-        <button class="icon-btn" data-act="refresh" aria-label="Osveži">${I.refresh}</button>
-        <a class="icon-btn" href="#/settings" aria-label="Podešavanja">${I.gear}</a></div>
+  const tabs = (cls) => `<div class="${cls}" role="tablist">
+        <button role="tab" data-tab="top" aria-selected="${S.tab === 'top'}">Najvažnije</button>
+        <button role="tab" data-tab="new" aria-selected="${S.tab === 'new'}">Najnovije</button>
+      </div>`;
+  app.innerHTML = `<div class="ptr" aria-hidden="true">${I.refresh}</div>
+    <div class="mini-bar"><div class="mb-in">
+      <button class="mb-title" data-act="to-top" aria-label="Na vrh">${esc(idx.title || 'Vesti')}${S.cat ? `<span>${esc(S.cat)}</span>` : ''}</button>
+      ${tabs('mb-tabs')}
+      <a class="icon-btn" href="#/search" aria-label="Pretraga">${I.search}</a></div></div>
+    <header class="home-head">
+      <div class="hh-row">
+        <div class="t"><div class="date">${esc(today.charAt(0).toUpperCase() + today.slice(1))}</div>
+          <h1>${esc(idx.title || 'Vesti')}</h1></div>
+        <div class="actions"><a class="icon-btn" href="#/search" aria-label="Pretraga">${I.search}</a>
+          <a class="icon-btn" href="#/saved" aria-label="Sačuvano">${I.bookmark}</a>
+          <a class="icon-btn" href="#/settings" aria-label="Podešavanja">${I.gear}</a></div>
+      </div>
+      <button class="sub" data-act="refresh" aria-label="Osveži vesti">${I.refresh}<span>Ažurirano ${ago(idx.generated)} · ${unread} nepročitanih</span></button>
     </header>
     <main class="wrap">
       ${inAppHint()}
@@ -666,10 +684,7 @@ function renderList() {
       ${!isInAppBrowser() && canOfferInstall() && !store.get('installDismissed') ? `<div class="install-banner">${I.install}
         <div class="grow"><b>Instaliraj Vesti</b><span>Kao prava aplikacija, bez pregledača</span></div>
         <button class="pill-btn" data-act="install">Instaliraj</button><button class="x" data-act="install-dismiss" aria-label="Zatvori">×</button></div>` : ''}
-      <div class="seg-tabs" role="tablist">
-        <button role="tab" data-tab="top" aria-selected="${S.tab === 'top'}">Najvažnije</button>
-        <button role="tab" data-tab="new" aria-selected="${S.tab === 'new'}">Najnovije</button>
-      </div>
+      ${tabs('seg-tabs')}
       ${chips}
       ${S.tab === 'top' && !S.cat ? briefCard() : ''}
       <div class="list-tools"><span>${list.length} vesti</span><button class="link-btn" data-act="allread">Označi sve kao pročitano</button></div>
@@ -765,36 +780,40 @@ async function renderArticle(itemId, clusterId) {
   };
   const slide = S.slide;
   S.slide = null;
+  const steps = threadSteps(cluster?.th);
 
   app.innerHTML =
     bar(
       `<a class="icon-btn" href="#/" data-act="back" aria-label="Nazad">${I.back}</a>
        <span class="crumb" data-idle="${pos >= 0 ? `${pos + 1} / ${order.length}` : ''}">${pos >= 0 ? `${pos + 1} / ${order.length}` : ''}</span>`,
-      `<span class="size-ctl"><button data-act="smaller" aria-label="Manji tekst">A</button><button data-act="bigger" aria-label="Veći tekst">A</button></span>
-       <button class="icon-btn" data-act="share-article" aria-label="Podeli">${I.share}</button>
-       <a class="pill-btn" href="${esc(it.u)}" target="_blank" rel="noopener noreferrer">Original ${I.ext}</a>`,
+      `<button class="icon-btn aa" data-act="reader-opts" aria-label="Prikaz teksta">Aa</button>
+       <button class="icon-btn" data-act="share-article" aria-label="Podeli">${I.share}</button>`,
     ) +
     `<main class="wrap"><article class="reader${slide ? ' slide-' + slide : ''}">
       <div class="kicker"><span class="src" style="--c:${esc(src.color)}">${esc(src.name)}</span><span>${ago(it.p)}</span>
         ${it.w ? `<span>${Math.max(1, Math.round(it.w / 220))} min čitanja</span>` : ''}<span class="byline"></span></div>
       <h1>${esc(lat(it.t))}</h1>
+      <div class="hero-slot"></div>
       <div class="actions-row">
         ${Voice.supported ? `<button class="act" data-act="listen">${I.headphones}<span>Slušaj</span></button>` : ''}
         <button class="act${saved ? ' on' : ''}" data-act="save">${saved ? I.bookmarkOn : I.bookmark}<span>${saved ? 'Sačuvano' : 'Sačuvaj'}</span></button>
+        ${steps.length > 1 ? `<button class="act jump" data-act="jump" data-to="timeline">${I.thread}<span>Tok priče · ${steps.length}</span></button>` : ''}
+        ${others.length ? `<button class="act jump" data-act="jump" data-to="compare"><span class="dots">${[it.s, ...others.map((id) => idx.items[id].s)].filter((v, i, a) => a.indexOf(v) === i).slice(0, 4).map((sid) => `<i style="--c:${esc(srcById(sid).color || 'var(--faint)')}"></i>`).join('')}</span><span>Kako ko piše</span></button>` : ''}
       </div>
+      <div class="content">${it.x ? '<p class="notice">Učitavam…</p>' : ''}</div>
       ${timelineBlock(cluster)}
       ${others.length ? compareBlock(cluster, itemId) : ''}
-      <div class="content">${it.x ? '<p class="notice">Učitavam…</p>' : ''}</div>
       ${prev || next ? `<nav class="story-nav">${navCard(prev, 'prev')}${navCard(next, 'next')}</nav>
         <p class="swipe-hint">Prevuci levo ili desno za sledeću vest</p>` : ''}
     </article></main>`;
   window.scrollTo(0, 0);
 
   const box = $('.content');
+  const slot = $('.hero-slot');
   const heroTag = (src) => `<img class="hero" src="${esc(src)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">`;
   const fallback = (why) => {
-    box.innerHTML = `${bigImg(it) ? heroTag(bigImg(it)) : ''}
-      ${it.l ? `<div class="body"><p>${esc(lat(it.l))}</p></div>` : ''}
+    slot.innerHTML = bigImg(it) ? heroTag(bigImg(it)) : '';
+    box.innerHTML = `${it.l ? `<div class="body"><p>${esc(lat(it.l))}</p></div>` : ''}
       <p class="notice">${why}</p>
       <a class="cta" href="${esc(it.u)}" target="_blank" rel="noopener noreferrer">Otvori na sajtu ${I.ext}</a>`;
   };
@@ -830,8 +849,14 @@ async function renderArticle(itemId, clusterId) {
     }
     const opensWithImage = !!first;
     const contains = hero && [...body.querySelectorAll('img')].some((im) => imgKey(im.getAttribute('src')) === imgKey(hero));
-    box.innerHTML = hero && !opensWithImage && !contains ? heroTag(hero) : '';
-    if (opensWithImage) first.classList.add('first-media');
+    // The picture always sits right under the headline: the article's own opening picture moves up there.
+    const movable = first && (first.tagName === 'IMG' || first.tagName === 'FIGURE' || first.textContent.trim().length < 80);
+    slot.innerHTML = hero && !opensWithImage && !contains ? heroTag(hero) : '';
+    if (movable) {
+      first.classList.add('hero-media');
+      slot.appendChild(first);
+    } else if (opensWithImage) first.classList.add('first-media');
+    box.innerHTML = '';
     box.appendChild(body);
     box.insertAdjacentHTML('beforeend', `<a class="cta" href="${esc(it.u)}" target="_blank" rel="noopener noreferrer">Otvori original na ${esc(src.name)} ${I.ext}</a>`);
     if (a.byline) $('.byline').textContent = lat(a.byline);
@@ -976,14 +1001,14 @@ function renderSettings() {
         <h3 class="about-h">Kako se koristi</h3>
         <ul>
           <li><b>Najvažnije</b> i <b>Najnovije</b> menjaju redosled, a <b>kategorije</b> ispod njih filtriraju po temi.</li>
-          <li>Oznaka <span class="stack-ex"><i></i><i></i><i></i></span> <b>3 izvora</b> znači da vest prenose tri medija. Dodirni <b>Kako ko piše</b> u članku da vidiš sve verzije.</li>
+          <li>Oznaka <span class="stack-ex"><i></i><i></i><i></i></span> <b>N1 +2</b> znači da vest prenose još dva medija. Dodirni <b>Kako ko piše</b> u članku da vidiš sve verzije.</li>
           <li>U članku <b>prevuci levo ili desno</b> za sledeću ili prethodnu vest. Pročitana priča je pročitana u svim izvorima.</li>
           <li>Oznaka <b>Razvoj priče · 3</b> znači da je to treći korak iste priče. Prethodni koraci su u članku, pod <b>Tok priče</b>.</li>
           <li><b>Lupa</b> na početnom ekranu otvara pretragu.</li>
           <li><b>Slušaj</b> u članku čita tekst naglas, a <b>Poslušaj</b> u Ukratko čita svih 20 vesti, za put do posla.</li>
           <li><b>Sačuvaj</b> čuva vest za kasnije, i bez interneta. Sve sačuvano je pod ikonicom zastavice na početnom ekranu.</li>
-          <li><b>Original</b> otvara članak na sajtu izvora, a <b>⤴</b> ga deli.</li>
-          <li><b>↻</b> donosi najnovije vesti. Ako su starije od 5 minuta, pokreće novo prikupljanje (oko 2 minuta).</li>
+          <li><b>Aa</b> u članku menja veličinu slova, font, pismo i temu, i otvara original na sajtu izvora. <b>⤴</b> deli vest.</li>
+          <li><b>Povuci listu nadole</b> ili dodirni „Ažurirano…“ za najnovije vesti. Ako su starije od 5 minuta, pokreće se novo prikupljanje (oko 2 minuta). Pogrešno „Označi sve kao pročitano“ poništavaš sa <b>Vrati</b>.</li>
         </ul>
         <p class="hint">Tekstovi i fotografije pripadaju izdavačima. Aplikacija je namenjena ličnoj upotrebi i uvek vodi na originalni članak.</p>
       </section>
@@ -1070,7 +1095,7 @@ async function waitForBuild(since) {
   S.updating = true;
   const btn = () => document.querySelector('[data-act="refresh"]');
   btn()?.classList.add('spin');
-  const sub = document.querySelector('.home-head .sub');
+  const sub = document.querySelector('.home-head .sub span');
   if (sub) sub.textContent = 'Prikupljam najnovije vesti… (oko 2 min)';
   toast('Prikupljam najnovije vesti, oko 2 minuta');
   const started = Date.now();
@@ -1635,12 +1660,29 @@ app.addEventListener('click', (e) => {
       S.limit += 60;
       S.listScroll = window.scrollY;
       return renderList();
-    case 'allread':
+    case 'allread': {
+      const before = { ...S.read };
       for (const c of S.index.clusters) S.read[c.id] = c.l;
       store.set('read', S.read);
       S.listScroll = window.scrollY;
       renderList();
-      return toast('Sve označeno kao pročitano');
+      return toast('Sve označeno kao pročitano', 'Vrati', () => {
+        S.read = before;
+        store.set('read', S.read);
+        S.listScroll = window.scrollY;
+        renderList();
+      });
+    }
+    case 'jump': {
+      const d = document.querySelector('.reader .' + t.dataset.to);
+      if (!d) return;
+      d.open = true;
+      return d.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    case 'reader-opts':
+      return readerOptions();
+    case 'to-top':
+      return window.scrollTo({ top: 0, behavior: 'smooth' });
     case 'back':
       e.preventDefault();
       if (S.hops > 0 && history.length > S.hops) history.go(-S.hops); // back to the list or Ukratko, scroll kept
@@ -1755,6 +1797,50 @@ window.addEventListener('scroll', () => {
   }
 }, { passive: true });
 
+// Home: a slim bar with the tabs slides in once the header is gone and you scroll up; scrolling down hides it.
+let lastY = 0;
+window.addEventListener('scroll', () => {
+  const mb = document.querySelector('.mini-bar');
+  const y = window.scrollY;
+  if (mb) {
+    const past = (document.querySelector('.seg-tabs')?.getBoundingClientRect().bottom ?? 0) < 0;
+    if (!past) mb.classList.remove('on');
+    else if (y < lastY - 4) mb.classList.add('on');
+    else if (y > lastY + 4) mb.classList.remove('on');
+  }
+  lastY = y;
+}, { passive: true });
+
+// Home: pull down at the top to refresh.
+let pull = null;
+document.addEventListener('touchstart', (e) => {
+  if (!document.querySelector('.home-head') || window.scrollY > 0 || e.touches.length > 1 || S.loading) return;
+  pull = { y: e.touches[0].clientY, d: 0 };
+}, { passive: true });
+document.addEventListener('touchmove', (e) => {
+  if (!pull) return;
+  pull.d = Math.max(0, e.touches[0].clientY - pull.y);
+  if (window.scrollY > 0) pull.d = 0;
+  const el = document.querySelector('.ptr');
+  if (!el) return;
+  const d = Math.min(pull.d * 0.5, 80);
+  el.style.transition = 'none';
+  el.style.transform = `translate(-50%, ${d - 48}px) rotate(${d * 4}deg)`;
+  el.classList.toggle('armed', d >= 60);
+}, { passive: true });
+document.addEventListener('touchend', () => {
+  if (!pull) return;
+  const armed = Math.min(pull.d * 0.5, 80) >= 60;
+  pull = null;
+  const el = document.querySelector('.ptr');
+  if (el) {
+    el.style.transition = '';
+    el.style.transform = '';
+    el.classList.remove('armed');
+  }
+  if (armed) refreshNow();
+});
+
 document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') goStory(e.key === 'ArrowRight' ? 1 : -1);
 });
@@ -1851,6 +1937,46 @@ async function doShare() {
     showSheet(`<h2>Link za deljenje</h2><textarea class="share-box" readonly>${esc(url)}</textarea>`);
     $('.share-box').select();
   }
+}
+
+// "Aa" in the reader: text size, font, alphabet, theme and the original article, in one sheet.
+function readerOptions() {
+  const [, , itemId, clusterId] = (location.hash || '').split('/');
+  const it = S.index.items[itemId] || savedAsItem(itemId);
+  const src = it ? it._src || srcById(it.s) : null;
+  const seg = (name, val, opts) =>
+    `<div class="seg">${opts.map(([v, l]) => `<button data-p="${name}" data-v="${v}" aria-pressed="${val === v}">${l}</button>`).join('')}</div>`;
+  const html = () => `<h2>Prikaz teksta</h2>
+    <div class="row"><div class="grow">Veličina teksta<div class="hint">${S.prefs.size}px</div></div>
+      <span class="size-ctl"><button data-size="-1" aria-label="Manji tekst">A</button><button data-size="1" aria-label="Veći tekst">A</button></span></div>
+    <div class="row"><div class="grow">Font</div>${seg('readfont', S.prefs.readfont || 'sans', [['sans', 'Moderan'], ['serif', 'Klasičan']])}</div>
+    <div class="row"><div class="grow">Sve latinicom</div><input type="checkbox" class="switch" data-p="latin" ${S.prefs.latin ? 'checked' : ''}></div>
+    <div class="row"><div class="grow">Tema</div>${seg('theme', S.prefs.theme, [['auto', 'Auto'], ['light', 'Svetla'], ['dark', 'Tamna']])}</div>
+    ${it ? `<a class="row" href="${esc(it.u)}" target="_blank" rel="noopener noreferrer"><div class="grow">Otvori original${src ? ` na ${esc(src.name)}` : ''}</div>${I.ext}</a>` : ''}`;
+  showSheet(`<div class="opts">${html()}</div>`);
+  const box = document.querySelector('.sheet .opts');
+  let latinChanged = false;
+  box.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-size],[data-v]');
+    if (!b) return;
+    if (b.dataset.size) S.prefs.size = Math.min(24, Math.max(15, S.prefs.size + +b.dataset.size));
+    else S.prefs[b.dataset.p] = b.dataset.v;
+    savePrefs();
+    box.innerHTML = html();
+  });
+  box.addEventListener('change', (e) => {
+    if (e.target.dataset.p !== 'latin') return;
+    S.prefs.latin = e.target.checked;
+    savePrefs();
+    latinChanged = true;
+  });
+  // Alphabet needs a re-render of the article; do it when the sheet closes.
+  const wrap = document.querySelector('.sheet-wrap');
+  new MutationObserver((_, obs) => {
+    if (wrap.isConnected) return;
+    obs.disconnect();
+    if (latinChanged && location.hash.split('/')[2] === itemId) renderArticle(itemId, clusterId);
+  }).observe(document.body, { childList: true });
 }
 
 function showSheet(html) {

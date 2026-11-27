@@ -1,5 +1,44 @@
 [
   {
+    "v": "2.4",
+    "date": "27. 11. 2026.",
+    "title": "Pregledniji početni ekran i članak",
+    "items": [
+      [
+        "Promena",
+        "Zaglavlje je manje, pa se prve vesti vide odmah. Kada se lista pomera nagore, vraća se uska traka sa Najvažnije i Najnovije, a dodir na „Vesti“ vraća na vrh."
+      ],
+      [
+        "Novo",
+        "Povuci listu nadole za najnovije vesti. Isto radi dodir na „Ažurirano…“ ispod naslova."
+      ],
+      [
+        "Promena",
+        "Uz vest piše „N1 +2“ umesto „3 izvora“, a crvena boja ostaje samo za Ukratko i slušanje."
+      ],
+      [
+        "Novo",
+        "„Označi sve kao pročitano“ se može poništiti dugmetom Vrati."
+      ],
+      [
+        "Promena",
+        "U članku je fotografija odmah ispod naslova. Tok priče i Kako ko piše su na kraju teksta, a dugmići ispod fotografije vode do njih."
+      ],
+      [
+        "Novo",
+        "Dugme Aa u članku: veličina slova, font, latinica, tema i otvaranje originala na jednom mestu."
+      ],
+      [
+        "Promena",
+        "Nove instalacije prikazuju sve latinicom. Može se promeniti u Podešavanjima ili preko Aa."
+      ],
+      [
+        "Ispravka",
+        "Gornja traka u članku više ne prosijava tekst ispod sebe."
+      ]
+    ]
+  },
+  {
     "v": "2.3",
     "date": "27. 11. 2026.",
     "title": "Poslušaj sve sačuvano, pouzdanije slušanje",
