@@ -1207,7 +1207,7 @@ const Radio = {
   },
   pending() {
     const at = store.get('radioReqAt', 0);
-    if (!at || Date.now() - at > 15 * 60e3) return 0;
+    if (!at || Date.now() - at > 25 * 60e3) return 0;
     const b = this.info();
     if (b && (b.generated > at || (b.errorAt || 0) > at)) return 0;
     return at;
@@ -1391,7 +1391,7 @@ const Radio = {
     }
     store.set('radioReqAt', Date.now());
     track('radio-request');
-    toast('Pripremam radio vesti, oko 7 minuta');
+    toast('Pripremam radio vesti, oko 10 minuta');
     this.refreshCard();
     this.watch();
   },
@@ -1420,7 +1420,7 @@ const Radio = {
         } catch {}
         this.refreshCard();
       }
-      if (store.get('radioReqAt', 0) && !this.pending() && Date.now() - store.get('radioReqAt', 0) > 15 * 60e3) this.refreshCard();
+      if (store.get('radioReqAt', 0) && !this.pending() && Date.now() - store.get('radioReqAt', 0) > 25 * 60e3) this.refreshCard();
     } finally {
       this.watching = false;
     }
@@ -1452,7 +1452,7 @@ function radioCard() {
   let sub, main;
   if (pend) {
     const min = Math.floor((Date.now() - pend) / 60e3);
-    sub = `Pripremam nove… ${min ? `${min} min od ukupno oko 7` : 'oko 7 min'}`;
+    sub = `Pripremam nove… ${min ? `${min} min od ukupno oko 10` : 'oko 10 min'}`;
   } else if (ready) {
     const g = new Date(ready.generated);
     const today = dayKey() === ready.date;

@@ -26,7 +26,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
 
@@ -57,7 +57,7 @@ jobs:
       # Radio bulletin: workday mornings (06:30-07:40 Belgrade) or on demand from the app. Never fails the build.
       - name: Radio bulletin
         continue-on-error: true
-        timeout-minutes: 12
+        timeout-minutes: 25
         env:
           BULLETIN: ${{ github.event_name == 'workflow_dispatch' && inputs.bulletin || 'auto' }}
           SITE: dist

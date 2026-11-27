@@ -12,6 +12,7 @@
 import { gunzipSync } from 'node:zlib';
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { deriveKey, encryptJson, encryptBytes } from './lib/crypto.mjs';
 import { readInfo, writeInfo, saveBulletin, publishBulletin } from './lib/bulletin-store.mjs';
 
@@ -20,7 +21,11 @@ const RAW_SITE = process.env.SITE || 'https://alecfleurs.github.io/vesti/';
 const LOCAL = !/^https?:/.test(RAW_SITE);
 const SITE = LOCAL ? path.resolve(RAW_SITE) : RAW_SITE.replace(/\/?$/, '/');
 const CACHE = path.resolve(process.env.CACHE_DIR || '.cache');
-const VOICE = process.env.VOICE || 'sr-RS-Chirp3-HD-Aoede';
+// Voice engine: Google Cloud Chirp 3 HD when GOOGLE_TTS_KEY is set (needs Cloud billing), otherwise Gemini speech on the
+// same free AI Studio key as the script (no card). TTS_ENGINE=cloud|gemini|none overrides.
+const ENGINE = process.env.TTS_ENGINE || (process.env.GOOGLE_TTS_KEY ? 'cloud' : process.env.GEMINI_API_KEY ? 'gemini' : 'none');
+const VOICE = process.env.VOICE || (ENGINE === 'cloud' ? 'sr-RS-Chirp3-HD-Aoede' : 'Kore');
+const TTS_MODELS = process.env.GEMINI_TTS_MODEL ? [process.env.GEMINI_TTS_MODEL] : ['gemini-3.1-flash-tts-preview', 'gemini-2.5-flash-preview-tts'];
 const MINUTES = Number(process.env.MINUTES || 20);
 const RATE = Number(process.env.RATE || 1);
 const WPM = 130; // Serbian neural voices read about 130 words per minute
@@ -305,9 +310,56 @@ async function tts(text) {
     throw new Error(`TTS: HTTP ${res.status} ${body.error?.message || ''}`);
   }
 }
+// Gemini speech: returns raw PCM (24 kHz, mono, 16-bit). Several segments go into one request (fewer calls on the
+// free tier); each segment's share of that request's audio is estimated from its length in characters.
+const GEMINI_STYLE = 'Pročitaj na srpskom, kao smirena i jasna spikerka radio vesti, prirodnim tempom:';
+async function geminiSpeech(text) {
+  let last;
+  for (const model of TTS_MODELS) {
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      let res, body;
+      try {
+        res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: `${GEMINI_STYLE}\n\n${text}` }] }],
+            generationConfig: {
+              responseModalities: ['AUDIO'],
+              speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: VOICE } } },
+            },
+          }),
+        });
+        body = await res.json().catch(() => ({}));
+      } catch (e) {
+        last = `network ${e.cause?.code || e.message}`;
+        await new Promise((r) => setTimeout(r, attempt * 15e3));
+        continue;
+      }
+      const data = (body.candidates?.[0]?.content?.parts || []).find((p) => p.inlineData?.data)?.inlineData;
+      if (res.ok && data) {
+        if (TTS_MODELS[0] !== model) TTS_MODELS.splice(TTS_MODELS.indexOf(model), 1), TTS_MODELS.unshift(model); // keep using what works
+        return { pcm: Buffer.from(data.data, 'base64'), model, mime: data.mimeType };
+      }
+      last = `${model}: HTTP ${res.status} ${body.error?.message || body.candidates?.[0]?.finishReason || 'no audio'}`;
+      log('speech', last);
+      if (res.status === 429 || res.status >= 500) {
+        await new Promise((r) => setTimeout(r, attempt * 30e3));
+        continue;
+      }
+      break; // 400/404: try the next model
+    }
+  }
+  throw new Error(`Gemini speech failed: ${last}`);
+}
+function pcmToMp3(pcm) {
+  return execFileSync('ffmpeg', ['-loglevel', 'error', '-f', 's16le', '-ar', '24000', '-ac', '1', '-i', 'pipe:0', '-c:a', 'libmp3lame', '-b:a', '48k', '-f', 'mp3', 'pipe:1'], { input: pcm, maxBuffer: 200e6 });
+}
+
 let mp3 = null;
+let ttsModel = null;
 const segBytes = [];
-if (process.env.GOOGLE_TTS_KEY) {
+if (ENGINE === 'cloud') {
   const parts = [];
   let chars = 0;
   for (const seg of segments) {
@@ -321,9 +373,30 @@ if (process.env.GOOGLE_TTS_KEY) {
     segBytes.push(n);
   }
   mp3 = Buffer.concat(parts); // MP3 frames concatenate cleanly
-  writeFileSync(`${OUT}/bulletin.mp3`, mp3);
+  ttsModel = 'cloud-chirp3-hd';
   log(`audio: ${parts.length} requests, ${chars} characters, ${(mp3.length / 1e6).toFixed(1)} MB, voice ${VOICE}`);
-} else log('GOOGLE_TTS_KEY missing: script only (the app reads it with the phone voice)');
+} else if (ENGINE === 'gemini') {
+  // Groups of whole segments up to ~2,800 characters (about 3 to 4 minutes of speech per request).
+  const groups = [];
+  for (const [i, seg] of segments.entries()) {
+    const g = groups[groups.length - 1];
+    if (g && g.chars + seg.length <= 2800) g.idx.push(i), (g.chars += seg.length);
+    else groups.push({ idx: [i], chars: seg.length });
+  }
+  const pcms = [];
+  const t0 = Date.now();
+  for (const [gi, g] of groups.entries()) {
+    if (gi) await new Promise((r) => setTimeout(r, 4000)); // stay under the free tier's per-minute limit
+    const { pcm, model } = await geminiSpeech(g.idx.map((i) => segments[i]).join('\n\n'));
+    ttsModel = model;
+    pcms.push(pcm);
+    for (const i of g.idx) segBytes[i] = (pcm.length * segments[i].length) / g.chars;
+    log(`speech ${gi + 1}/${groups.length}: ${g.chars} chars -> ${(pcm.length / 48000).toFixed(0)} s (${model})`);
+  }
+  mp3 = pcmToMp3(Buffer.concat(pcms));
+  log(`audio: ${groups.length} requests in ${Math.round((Date.now() - t0) / 1000)} s, ${(mp3.length / 1e6).toFixed(1)} MB, voice ${VOICE}, ${ttsModel}`);
+} else log('no voice key: script only (the app reads it with the phone voice)');
+if (mp3) writeFileSync(`${OUT}/bulletin.mp3`, mp3);
 
 if (MODE === 'auto' || MODE === 'now') {
   const t = belgrade();
@@ -338,7 +411,7 @@ if (MODE === 'auto' || MODE === 'now') {
     acc += segBytes[i] || 0;
     return { text, label: label(text, i), start };
   });
-  const data = { id, date: t.date, generated: Date.now(), model: usedModel, voice: mp3 ? VOICE : null, segments: segs, stories: stories.map((s) => ({ rank: s.rank, sources: s.versions.map((v) => ({ source: v.source, title: v.title, url: v.url })) })) };
+  const data = { id, date: t.date, generated: Date.now(), model: usedModel, voice: mp3 ? `${VOICE} (${ttsModel})` : null, segments: segs, stories: stories.map((s) => ({ rank: s.rank, sources: s.versions.map((v) => ({ source: v.source, title: v.title, url: v.url })) })) };
   await saveBulletin(
     CACHE,
     { id, date: t.date, generated: data.generated, minutes: Math.round(scriptWords / WPM), audio: !!mp3, bytes: mp3?.length || 0, segments: segs.length, requested: MODE, salt: meta.salt },
