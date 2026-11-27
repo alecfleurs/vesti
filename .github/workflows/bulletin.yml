@@ -1,0 +1,51 @@
+name: bulletin (test)
+
+# Manual test of the spoken news bulletin: Gemini writes, Google Chirp 3 HD reads.
+# Result (MP3 + script) is a workflow artifact kept for 3 days.
+on:
+  workflow_dispatch:
+    inputs:
+      voice:
+        description: 'Voice (sr-RS-Chirp3-HD-<Aoede|Kore|Leda|Zephyr|Despina|Sulafat|...>)'
+        default: 'sr-RS-Chirp3-HD-Aoede'
+      minutes:
+        description: 'Target length in minutes'
+        default: '20'
+      model:
+        description: 'Gemini model (empty = newest Flash available)'
+        default: ''
+      rate:
+        description: 'Speaking rate (0.8 to 1.2)'
+        default: '1.0'
+
+permissions:
+  contents: read
+
+jobs:
+  bulletin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Write and record
+        env:
+          NEWS_KEY: ${{ secrets.NEWS_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_TTS_KEY: ${{ secrets.GOOGLE_TTS_KEY }}
+          VOICE: ${{ inputs.voice }}
+          MINUTES: ${{ inputs.minutes }}
+          GEMINI_MODEL: ${{ inputs.model }}
+          RATE: ${{ inputs.rate }}
+        run: node scripts/bulletin.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bilten
+          path: |
+            out/bulletin/bulletin.mp3
+            out/bulletin/script.txt
+            out/bulletin/stories.json
+          retention-days: 3
