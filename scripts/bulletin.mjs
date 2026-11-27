@@ -129,25 +129,64 @@ if (process.env.DRY) process.exit(0);
 
 // ---------- Gemini ----------
 if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is missing');
+// Streaming (SSE): the first bytes arrive quickly, so a 4-minute generation can't hit fetch's header timeout.
 async function gemini(model) {
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: system }] },
-      contents: [{ role: 'user', parts: [{ text: user }] }],
-      generationConfig: { temperature: 0.4, maxOutputTokens: 32768 },
-    }),
-  });
-  const body = await res.json().catch(() => ({}));
+  let res;
+  try {
+    res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: 'user', parts: [{ text: user }] }],
+        generationConfig: { temperature: 0.4, maxOutputTokens: 32768 },
+      }),
+    });
+  } catch (e) {
+    const err = new Error(`Gemini ${model}: network ${e.cause?.code || e.message}`);
+    err.status = 599;
+    throw err;
+  }
   if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
     const err = new Error(`Gemini ${model}: HTTP ${res.status} ${body.error?.message || ''}`);
     err.status = res.status;
     throw err;
   }
-  const text = (body.candidates?.[0]?.content?.parts || []).filter((p) => !p.thought).map((p) => p.text || '').join('');
-  if (!text.trim()) throw new Error(`Gemini ${model}: empty answer (${body.candidates?.[0]?.finishReason || 'no candidate'})`);
-  return { text, usage: body.usageMetadata };
+  let raw;
+  try {
+    raw = await res.text();
+  } catch (e) {
+    const err = new Error(`Gemini ${model}: stream broke ${e.cause?.code || e.message}`);
+    err.status = 599;
+    throw err;
+  }
+  let text = '', usage, finish;
+  for (const line of raw.split('\n')) {
+    if (!line.startsWith('data:')) continue;
+    let ev;
+    try {
+      ev = JSON.parse(line.slice(5));
+    } catch {
+      continue;
+    }
+    if (ev.error) {
+      const err = new Error(`Gemini ${model}: ${ev.error.message}`);
+      err.status = ev.error.code || 500;
+      throw err;
+    }
+    const c = ev.candidates?.[0];
+    text += (c?.content?.parts || []).filter((p) => !p.thought).map((p) => p.text || '').join('');
+    if (c?.finishReason) finish = c.finishReason;
+    if (ev.usageMetadata) usage = ev.usageMetadata;
+  }
+  if (!text.trim()) {
+    const err = new Error(`Gemini ${model}: empty answer (${finish || 'no candidate'})`);
+    err.status = 598;
+    throw err;
+  }
+  if (finish && finish !== 'STOP') log(`warning: finishReason ${finish}`);
+  return { text, usage };
 }
 // Free tier: 503 (high demand) and 429 (rate limit) are common and short; retry, then try the next model.
 let script, usedModel;
