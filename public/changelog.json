@@ -1,5 +1,32 @@
 [
   {
+    "v": "2.6",
+    "date": "27. 11. 2026.",
+    "title": "Jutarnja doza",
+    "items": [
+      [
+        "Novo",
+        "Jutarnja doza: svakog jutra oko 7 h, i vikendom, spreman je pregled najvažnijih vesti od oko 15 do 20 minuta, za slušanje na putu. Pokreće se dugmetom na vrhu liste, radi i sa zaključanim ekranom, a sa zaključanog ekrana ili iz auta može se preskočiti na sledeću ili prethodnu vest."
+      ],
+      [
+        "Novo",
+        "Tekst Jutarnje doze piše veštačka inteligencija na osnovu izveštaja više medija, a čita ga sintetički glas. Vesti iz prethodnog pregleda se ne ponavljaju, osim kao kratak nastavak kada ima nečeg novog."
+      ],
+      [
+        "Promena",
+        "Vrh početnog ekrana je zbijeniji: Jutarnja doza i Ukratko su jedan red, pa se vesti vide ranije."
+      ],
+      [
+        "Promena",
+        "Ukratko se više ne čita naglas, jer to sada radi Jutarnja doza. Pojedinačni članci se i dalje mogu slušati dugmetom Slušaj."
+      ],
+      [
+        "Promena",
+        "U Toku priče i u Kako ko piše najnoviji izveštaji su sada na vrhu."
+      ]
+    ]
+  },
+  {
     "v": "2.5",
     "date": "27. 11. 2026.",
     "title": "Kraći Ukratko, sređena Podešavanja, teme u pretrazi",

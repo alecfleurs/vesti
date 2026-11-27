@@ -28,7 +28,7 @@ export async function saveBulletin(cache, info, scriptBin, audioBin) {
   await mkdir(dir, { recursive: true });
   await writeFile(path.join(dir, `${info.id}.bin`), scriptBin);
   if (audioBin) await writeFile(path.join(dir, `${info.id}.audio.bin`), audioBin);
-  for (const f of await readdir(dir)) if (f !== 'info.json' && !f.startsWith(info.id + '.')) await rm(path.join(dir, f));
+  for (const f of await readdir(dir)) if (f.endsWith('.bin') && !f.startsWith(info.id + '.')) await rm(path.join(dir, f));
   await writeInfo(cache, info);
 }
 

@@ -37,7 +37,7 @@ const S = {
   lastLoad: 0,
 };
 
-const APP_VERSION = '2.5';
+const APP_VERSION = '2.6';
 const APP_BUILD = '__BUILD__'; // replaced at build time with commit + date
 
 const app = document.getElementById('app');
@@ -235,7 +235,6 @@ async function load(pass) {
     route();
     prefetch();
     Radio.prefetch();
-    if (Radio.enabled() && Radio.pending()) Radio.watch();
     navigator.serviceWorker?.controller?.postMessage({ type: 'keep', ids: Object.keys(index.items), bulletin: S.meta?.bulletin?.id || '' });
   } catch (e) {
     console.error(e);
@@ -622,29 +621,19 @@ function sourceBadge(c, src) {
   return `<span class="srcs" aria-label="${c.srcs.length} izvora"><span class="dots">${dots}</span><b>${esc(src.name)}</b><span class="plus">+${others}</span></span>`;
 }
 
-// Ukratko seen today (opened or listened): the home card shrinks to one line.
 const dayKey = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Belgrade' });
-const markBriefSeen = () => store.set('briefSeen', dayKey());
 
-function briefCard() {
+// Top of the home list: two compact tiles side by side, so the news start high on the screen.
+function topTiles() {
   const list = briefing();
-  if (list.length < 3) return '';
   const unread = list.filter(isUnread).length;
-  const mins = Math.max(2, Math.round(list.length * 0.35));
-  if (!unread || store.get('briefSeen') === dayKey())
-    return `<div class="brief-card mini"><a class="bc-link" href="#/brief"><span class="bc-badge">Ukratko</span>
-      <span class="bc-mini">${unread ? `${unread} od ${list.length} nepročitano` : 'Sve pročitano'} · ${mins} min</span><span class="go">›</span></a>
-      ${Voice.supported ? `<button class="bc-listen sm" data-act="listen-brief" aria-label="Poslušaj Ukratko">${I.headphones}</button>` : ''}</div>`;
-  return `<div class="brief-card${unread ? '' : ' done'}"><a class="bc-link" href="#/brief">
-    <div class="bc-head"><span class="bc-badge">Ukratko</span><span>${unread ? `${unread} od ${list.length} nepročitano` : 'Sve pročitano'} · oko ${mins} min</span></div>
-    <div class="bc-title">Najvažnije u poslednja 24 sata</div>
-    <ol>${list.slice(0, 3).map((c) => `<li>${esc(lat(S.index.items[c.rep].t))}</li>`).join('')}</ol></a>
-    <div class="bc-actions"><a class="bc-go" href="#/brief">Pročitaj ukratko →</a>
-      ${Voice.supported ? `<button class="bc-listen" data-act="listen-brief">${I.headphones}Poslušaj</button>` : ''}</div></div>`;
+  const brief = list.length >= 3
+    ? `<a class="tile brief-tile" href="#/brief"><span class="tl-txt"><b>Ukratko</b><small>${unread ? `${unread} nepročitano` : 'Sve pročitano'}</small></span><span class="go">›</span></a>`
+    : '';
+  return `<div class="top-tiles">${doseTile()}${brief}</div>`;
 }
 
 function renderBrief() {
-  markBriefSeen();
   const idx = S.index;
   const list = briefing();
   const now = new Date();
@@ -655,7 +644,6 @@ function renderBrief() {
       <div class="brief-date">${esc(day.charAt(0).toUpperCase() + day.slice(1))}</div>
       <h1 class="page-title">Ukratko</h1>
       <p class="brief-sub">${list.length} najvažnijih vesti iz poslednja 24 sata, po broju medija koji ih prenose.</p>
-      ${Voice.supported ? `<button class="listen-big" data-act="listen-brief">${I.play}<span>Poslušaj Ukratko<small>${briefFull() ? 'cele vesti' : 'samo sažeci'}, oko ${briefListenMin(list)} min</small></span></button>` : ''}
       <ol class="brief-list">${list
         .map((c, i) => {
           const it = idx.items[c.rep];
@@ -739,7 +727,7 @@ function renderList() {
         <button class="pill-btn" data-act="install">Instaliraj</button><button class="x" data-act="install-dismiss" aria-label="Zatvori">×</button></div>` : ''}
       ${tabs('seg-tabs')}
       ${chips}
-      ${S.tab === 'top' && !S.cat ? radioCard() + briefCard() : ''}
+      ${S.tab === 'top' && !S.cat ? topTiles() : ''}
       <div class="list-tools"><span>${list.length} vesti</span><button class="link-btn" data-act="allread">Označi sve kao pročitano</button></div>
       ${shown.length ? `<ul class="list">${cards}</ul>` : `<p class="empty">${S.prefs.readMode === 'hide' ? 'Sve vesti su pročitane. Nove stižu svakih 30 minuta.' : 'Nema vesti za prikaz.'}</p>`}
       ${list.length > S.limit ? `<button class="more" data-act="more">Prikaži još (${list.length - S.limit})</button>` : ''}
@@ -771,6 +759,8 @@ function timelineBlock(cluster) {
   const steps = threadSteps(cluster?.th);
   if (steps.length < 2) return '';
   const rows = steps
+    .slice()
+    .reverse() // newest step first
     .map((c) => {
       const items = c.it.filter(visible);
       const rep = items.includes(c.r) ? c.r : items[0];
@@ -788,7 +778,7 @@ function timelineBlock(cluster) {
 
 // "Kako ko piše": every outlet's headline for the same story, collapsed under the title.
 function compareBlock(cluster, currentId) {
-  const ids = cluster.it.filter(visible).sort((a, b) => S.index.items[a].p - S.index.items[b].p);
+  const ids = cluster.it.filter(visible).sort((a, b) => S.index.items[b].p - S.index.items[a].p); // newest first
   const rows = ids
     .map((id) => {
       const o = S.index.items[id];
@@ -932,7 +922,6 @@ function voiceSettings() {
         <select class="sel" data-act="voice">${opts || '<option>Nema glasova</option>'}</select></div>
       <div class="row"><div class="grow">Brzina<div class="hint">${(S.prefs.rate || 1).toFixed(1)}×</div></div>
         <input type="range" min="0.7" max="1.6" step="0.1" value="${S.prefs.rate || 1}" data-act="rate"></div>
-      <div class="row"><div class="grow">Poslušaj Ukratko<div class="hint">Cele vesti, jedna za drugom, ili samo naslov i sažetak</div></div>${seg('briefVoice', briefFull() ? 'full' : 'short', [['full', 'Cele vesti'], ['short', 'Sažeci']])}</div>
       <button class="row" data-act="voice-test"><div class="grow">Probaj glas</div>${I.play}</button>
     </section>`;
 }
@@ -1054,7 +1043,8 @@ function renderSettings() {
           <li>U članku <b>prevuci levo ili desno</b> za sledeću ili prethodnu vest. Pročitana priča je pročitana u svim izvorima.</li>
           <li>Oznaka <b>Razvoj priče · 3</b> znači da je to treći korak iste priče. Prethodni koraci su u članku, pod <b>Tok priče</b>.</li>
           <li><b>Lupa</b> na početnom ekranu otvara pretragu.</li>
-          <li><b>Slušaj</b> u članku čita tekst naglas, a <b>Poslušaj</b> u Ukratko čita svih 20 vesti, za put do posla.</li>
+          <li><b>Jutarnja doza</b> je svakog jutra oko 7 h spremljen pregled najvažnijih vesti, za slušanje na putu. Tekst piše veštačka inteligencija na osnovu više izvora, a čita ga sintetički glas, pa se ponekad može potkrasti greška. Radi i sa zaključanim ekranom.</li>
+          <li><b>Slušaj</b> u članku čita taj tekst glasom telefona.</li>
           <li><b>Sačuvaj</b> čuva vest za kasnije, i bez interneta. Sve sačuvano je pod ikonicom zastavice na početnom ekranu.</li>
           <li><b>Aa</b> u članku menja veličinu slova, font, pismo i temu, i otvara original na sajtu izvora. <b>⤴</b> deli vest.</li>
           <li><b>Povuci listu nadole</b> ili dodirni „Ažurirano…“ za najnovije vesti. Ako su starije od 5 minuta, pokreće se novo prikupljanje (oko 2 minuta). Pogrešno „Označi sve kao pročitano“ poništavaš sa <b>Vrati</b>.</li>
@@ -1066,7 +1056,7 @@ function renderSettings() {
   page('Podešavanja', `<section class="panel">
         ${link('izgled', 'Izgled', `${themeName} · ${S.prefs.readfont === 'serif' ? 'Klasičan' : 'Moderan'} font · ${S.prefs.size}px${S.prefs.latin ? ' · latinica' : ''}`)}
         ${link('lista', 'Lista vesti', `Pročitane: ${S.prefs.readMode === 'hide' ? 'sakrivene' : 'zatamnjene'}${S.prefs.fun ? ' · zabava' : ''}${S.prefs.promo ? ' · sponzorisano' : ''}`)}
-        ${Voice.supported ? link('glas', 'Čitanje naglas', `Brzina ${(S.prefs.rate || 1).toFixed(1)}× · Ukratko: ${briefFull() ? 'cele vesti' : 'sažeci'}`) : ''}
+        ${Voice.supported ? link('glas', 'Čitanje naglas', `Glas telefona za pojedinačne članke · brzina ${(S.prefs.rate || 1).toFixed(1)}×`) : ''}
         ${link('izvori', 'Izvori', `${on} od ${idx.sources.length} uključeno`)}
       </section>
       <section class="panel">
@@ -1188,7 +1178,7 @@ async function waitForBuild(since) {
   }
 }
 
-/* ---------- radio bulletin (owner only for now) ----------
+/* ---------- Jutarnja doza (spoken morning bulletin) ----------
    The build makes it on workday mornings or on request (scripts/bulletin.mjs): data/bulletin/<id>.bin holds the
    script and segment starts, <id>.audio.bin the MP3 (Google voice). meta.json carries its metadata. Played with a
    real <audio> element, so it keeps going with the screen locked and shows lock-screen / car controls. */
@@ -1199,18 +1189,10 @@ const Radio = {
   id: null,
   seg: 0,
 
-  enabled: () => !!store.get('owner'),
   info: () => S.meta?.bulletin || null,
   ready() {
     const b = this.info();
     return b && b.id ? b : null;
-  },
-  pending() {
-    const at = store.get('radioReqAt', 0);
-    if (!at || Date.now() - at > 25 * 60e3) return 0;
-    const b = this.info();
-    if (b && (b.generated > at || (b.errorAt || 0) > at)) return 0;
-    return at;
   },
 
   async load() {
@@ -1231,19 +1213,19 @@ const Radio = {
 
   async play() {
     if (this.audio && this.id === this.ready()?.id) return this.toggle();
-    toast('Učitavam radio vesti…');
+    toast('Učitavam Jutarnju dozu…');
     let data;
     try {
       data = await this.load();
     } catch (e) {
-      return toast('Radio vesti nisu dostupne: ' + e.message);
+      return toast('Jutarnja doza nije dostupna: ' + e.message);
     }
     Voice.stop();
     track('radio-play');
     if (!this.url) {
       // No recording (voice key missing): read the script with the phone's voice.
       const segs = data.segments.flatMap((sg, i) => Voice.chunks(sg.text, i, { label: sg.label }));
-      return Voice.start(segs, 'Radio vesti');
+      return Voice.start(segs, 'Jutarnja doza');
     }
     this.stop();
     const a = new Audio(this.url);
@@ -1256,7 +1238,7 @@ const Radio = {
     a.addEventListener('ended', () => {
       store.set('radioPos', { id: this.id, t: 0 });
       this.stop();
-      toast('Kraj radio vesti');
+      toast('Kraj Jutarnje doze');
     });
     this.session();
     try {
@@ -1323,8 +1305,8 @@ const Radio = {
     if (!('mediaSession' in navigator)) return;
     const ms = navigator.mediaSession;
     ms.metadata = new MediaMetadata({
-      title: this.label() || 'Radio vesti',
-      artist: 'Radio vesti',
+      title: this.label() || 'Jutarnja doza',
+      artist: 'Jutarnja doza · AI pregled vesti',
       album: 'Pametniji čitač vesti',
       artwork: [{ src: 'icon-192.png', sizes: '192x192', type: 'image/png' }],
     });
@@ -1349,7 +1331,7 @@ const Radio = {
       document.querySelector('.player')?.remove();
       el = document.createElement('div');
       el.className = 'player radio';
-      el.innerHTML = `<div class="pl-txt"><b>Radio vesti <span class="pl-time"></span></b><span></span></div>
+      el.innerHTML = `<div class="pl-txt"><b>Jutarnja doza <span class="pl-time"></span></b><span></span></div>
         <button data-pl="prev" aria-label="Prethodna vest">${I.prev}</button>
         <button data-pl="toggle" class="pl-main" aria-label="Pauza"></button>
         <button data-pl="next" aria-label="Sledeća vest">${I.next}</button>
@@ -1369,70 +1351,14 @@ const Radio = {
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = this.audio.paused ? 'paused' : 'playing';
   },
 
-  // Ask GitHub for a build that makes a bulletin now (~5-8 min), then watch meta.json for it.
-  async request() {
-    const idx = S.index;
-    if (this.pending()) return toast('Radio vesti se već pripremaju…');
-    if (!idx?.dispatch || !idx.repo) return toast('Pravljenje na zahtev nije podešeno');
-    try {
-      const r = await fetch(`https://api.github.com/repos/${idx.repo}/actions/workflows/update.yml/dispatches`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${idx.dispatch}`,
-          Accept: 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ ref: 'main', inputs: { bulletin: 'now' } }),
-      });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-    } catch (e) {
-      return toast('Nije uspelo pokretanje: ' + e.message);
-    }
-    store.set('radioReqAt', Date.now());
-    track('radio-request');
-    toast('Pripremam radio vesti, oko 10 minuta');
-    this.refreshCard();
-    this.watch();
-  },
-  async watch() {
-    if (this.watching) return;
-    this.watching = true;
-    try {
-      while (this.pending()) {
-        await new Promise((r) => setTimeout(r, 20000));
-        try {
-          const m = await (await fetch('data/meta.json', { cache: 'no-store' })).json();
-          const at = store.get('radioReqAt', 0);
-          const b = m.bulletin;
-          if (b && b.generated > at) {
-            S.meta = m;
-            this.refreshCard();
-            toast('Radio vesti su spremne');
-            break;
-          }
-          if (b && (b.errorAt || 0) > at) {
-            S.meta = m;
-            this.refreshCard();
-            toast('Pravljenje radio vesti nije uspelo');
-            break;
-          }
-        } catch {}
-        this.refreshCard();
-      }
-      if (store.get('radioReqAt', 0) && !this.pending() && Date.now() - store.get('radioReqAt', 0) > 25 * 60e3) this.refreshCard();
-    } finally {
-      this.watching = false;
-    }
-  },
   refreshCard() {
-    const el = document.querySelector('.radio-card');
-    if (el) el.outerHTML = radioCard();
+    const el = document.querySelector('.tile.dose');
+    if (el) el.outerHTML = doseTile();
   },
   // On Wi-Fi/normal data, fetch today's recording in the background so it plays offline in the car.
   prefetch() {
     const b = this.ready();
-    if (!this.enabled() || !b?.audio || navigator.connection?.saveData) return;
+    if (!b?.audio || navigator.connection?.saveData) return;
     fetch(`data/bulletin/${b.id}.audio.bin`).catch(() => {});
     fetch(`data/bulletin/${b.id}.bin`).catch(() => {});
   },
@@ -1444,29 +1370,16 @@ function fmtTime(sec) {
   return `${m}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
 }
 
-function radioCard() {
-  if (!Radio.enabled()) return '';
-  const b = Radio.info();
+// "Jutarnja doza": the spoken morning bulletin (made by the build every morning; see scripts/bulletin.mjs).
+function doseTile() {
   const ready = Radio.ready();
-  const pend = Radio.pending();
-  let sub, main;
-  if (pend) {
-    const min = Math.floor((Date.now() - pend) / 60e3);
-    sub = `Pripremam nove… ${min ? `${min} min od ukupno oko 10` : 'oko 10 min'}`;
-  } else if (ready) {
-    const g = new Date(ready.generated);
-    const today = dayKey() === ready.date;
-    const when = today ? `danas u ${g.toLocaleTimeString('sr-Latn-RS', { hour: '2-digit', minute: '2-digit' })}` : g.toLocaleDateString('sr-Latn-RS', { weekday: 'long', day: 'numeric', month: 'numeric' });
-    sub = `${when} · ${ready.minutes} min${ready.audio ? '' : ' · glas telefona'}`;
-  } else sub = 'Još nema biltena';
-  const failed = b?.errorAt && (!ready || b.errorAt > ready.generated) && !pend;
-  if (ready && !pend) main = `<button class="rc-play" data-act="radio-play" aria-label="Pusti radio vesti">${Radio.audio && !Radio.audio.paused ? I.pause : I.play}</button>`;
-  else main = pend ? '<span class="rc-spin"></span>' : '';
-  return `<div class="radio-card">
-    ${main}
-    <div class="rc-txt"><b>Radio vesti</b><span>${esc(sub)}</span>${failed ? '<span class="rc-err">Poslednji pokušaj nije uspeo</span>' : ''}</div>
-    ${pend ? '' : `<button class="rc-make" data-act="radio-make">${ready ? 'Nove' : 'Napravi'}</button>`}
-  </div>`;
+  if (!ready) return `<div class="tile dose off"><span class="tl-play">${I.play}</span><span class="tl-txt"><b>Jutarnja doza</b><small>Stiže ujutru</small></span></div>`;
+  const g = new Date(ready.generated);
+  const when = dayKey() === ready.date ? g.toLocaleTimeString('sr-Latn-RS', { hour: '2-digit', minute: '2-digit' }) : g.toLocaleDateString('sr-Latn-RS', { weekday: 'short' });
+  const playing = Radio.audio && !Radio.audio.paused;
+  return `<button class="tile dose" data-act="radio-play" aria-label="${playing ? 'Pauza' : 'Pusti Jutarnju dozu'}">
+    <span class="tl-play">${playing ? I.pause : I.play}</span>
+    <span class="tl-txt"><b>Jutarnja doza</b><small>${when} · ${ready.minutes} min · AI pregled</small></span></button>`;
 }
 
 /* ---------- share one article ---------- */
@@ -1551,7 +1464,7 @@ const Voice = {
 
   async start(segments, title) {
     if (!this.supported) return toast('Ovaj pregledač ne podržava čitanje naglas');
-    if (title !== 'Radio vesti') Radio.stop();
+    if (title !== 'Jutarnja doza') Radio.stop();
     this.stop(true);
     this.q = segments;
     this.i = 0;
@@ -1707,75 +1620,6 @@ const fullItem = (c) => {
   if (S.index.items[c.rep]?.x) return c.rep;
   return ids.filter((id) => S.index.items[id]?.x).sort((a, b) => (S.index.items[b].w || 0) - (S.index.items[a].w || 0))[0] || null;
 };
-const briefFull = () => S.prefs.briefVoice !== 'short';
-// Listening time in minutes (~150 words a minute at normal speed).
-function briefListenMin(list) {
-  if (!briefFull()) return Math.max(3, Math.round(list.length * 0.6));
-  const words = list.reduce((n, c) => {
-    const id = fullItem(c);
-    return n + 15 + (id ? S.index.items[id].w || 250 : 50);
-  }, 0);
-  return Math.max(3, Math.round(words / 150 / (S.prefs.rate || 1)));
-}
-// Article HTML → paragraphs to read.
-function htmlBlocks(html) {
-  const doc = new DOMParser().parseFromString(html || '', 'text/html');
-  doc.querySelectorAll('figure, figcaption, script, style, .gallery').forEach((el) => el.remove());
-  return [...doc.body.querySelectorAll('p, h2, h3, h4, li, blockquote')]
-    .filter((el) => !el.querySelector('p, li')) // innermost blocks only, no double reading
-    .map((el) => el.textContent.trim())
-    .filter((t) => t.length > 2);
-}
-
-async function readBriefAloud() {
-  markBriefSeen();
-  const list = briefing();
-  if (!list.length) return;
-  const full = briefFull();
-  // Load every article first, so nothing has to be fetched while driving.
-  const texts = new Map();
-  if (full) {
-    toast(`Pripremam ${list.length} vesti…`);
-    const loadOne = async (c) => {
-      const id = fullItem(c);
-      if (!id) return;
-      try {
-        const a = await decrypt(await getBin(`data/a/${id}.bin`));
-        const blocks = htmlBlocks(a.html);
-        if (blocks.length) texts.set(c.id, blocks);
-      } catch {}
-    };
-    const queue = [...list];
-    await Promise.all(Array.from({ length: 5 }, async () => { while (queue.length) await loadOne(queue.shift()); }));
-  }
-  const now = new Date();
-  const part = now.getHours() < 11 ? 'Dobro jutro' : now.getHours() < 18 ? 'Dobar dan' : 'Dobro veče';
-  const day = now.toLocaleDateString('sr-Latn-RS', { weekday: 'long', day: 'numeric', month: 'long' });
-  const segs = Voice.chunks(`${part}. Ukratko, ${list.length} najvažnijih vesti, ${day}.`, -1, { label: 'Uvod' });
-  list.forEach((c, n) => {
-    const it = S.index.items[c.rep];
-    const onStart = () => {
-      S.read[c.id] = Math.max(Date.now(), c.l); // heard = read
-      store.set('read', S.read);
-      document.querySelectorAll('.brief-list li.speaking').forEach((el) => el.classList.remove('speaking'));
-      const li = document.querySelector(`.brief-list li[data-id="${c.id}"]`);
-      if (li) {
-        li.classList.add('speaking', 'read');
-        li.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      }
-    };
-    const label = `Vest ${n + 1} od ${list.length}`;
-    const story = Voice.chunks(`${ORD[n] || n + 1 + '.'} vest. ${it.t}.`, n, { label });
-    story[0].onStart = onStart;
-    segs.push(...story);
-    const body = texts.get(c.id);
-    if (body) body.forEach((b) => segs.push(...Voice.chunks(b, n, { label })));
-    else segs.push(...Voice.chunks(c.summary ?? summarize(bestLead(c)), n, { label }));
-  });
-  segs.push(...Voice.chunks('To je sve za sada. Srećan put.', 999, { label: 'Kraj' }));
-  track('listen-brief');
-  Voice.start(segs, 'Ukratko');
-}
 
 /* ---------- saved for later ---------- */
 // Saved stories keep their own copy (text + metadata) on the device, so they stay readable offline
@@ -2050,7 +1894,7 @@ app.addEventListener('click', (e) => {
       else location.hash = S.from || '#/';
       return;
     case 'voice-test':
-      return Voice.start(Voice.chunks('Dobro jutro. Ovo je Pametniji čitač vesti. Ovako će zvučati Ukratko na putu do posla.', 0, { label: 'Proba glasa' }), 'Proba glasa');
+      return Voice.start(Voice.chunks('Dobro jutro. Ovo je Pametniji čitač vesti. Ovako zvuči glas telefona kada čita članak.', 0, { label: 'Proba glasa' }), 'Proba glasa');
     case 'share-article':
       return shareArticle();
     case 'listen': {
@@ -2063,12 +1907,6 @@ app.addEventListener('click', (e) => {
       return readSavedAloud();
     case 'radio-play':
       return Radio.play();
-    case 'radio-make':
-      return Radio.request();
-    case 'listen-brief':
-      e.preventDefault();
-      if (!location.hash.startsWith('#/brief')) location.hash = '#/brief';
-      return setTimeout(readBriefAloud, 50);
     case 'save': {
       const id = S.cur?.id;
       if (!id) return;

@@ -3,8 +3,8 @@
 // Two ways to run:
 //  - Inside the regular build (update.yml), after build.mjs: SITE=dist, BULLETIN=auto|now. The result is encrypted with
 //    the site key, kept in .cache/bulletin/ and published as dist/data/bulletin/<id>.bin (+ .audio.bin) with metadata in
-//    meta.json (see lib/bulletin-store.mjs). auto = once per workday between 06:30 and 07:40 Belgrade time; now = on demand
-//    (the app's "Napravi nove" button). A failure never fails the build: the previous bulletin stays and meta gets the error.
+//    meta.json (see lib/bulletin-store.mjs). auto = once every morning between 06:30 and 07:40 Belgrade time; now = on demand
+//    (manual: gh api ... dispatches -f inputs[bulletin]=now). A failure never fails the build: the previous bulletin stays and meta gets the error.
 //  - Manual test (bulletin.yml): SITE = live site URL, BULLETIN=test, files in out/bulletin.
 // Env: NEWS_KEY, GEMINI_API_KEY, GOOGLE_TTS_KEY (optional: without it the app reads the script with the phone's voice),
 //      VOICE (default sr-RS-Chirp3-HD-Aoede), MINUTES (20), RATE (1.0), GEMINI_MODEL, DRY=1 (prompt only).
@@ -14,6 +14,7 @@ import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { deriveKey, encryptJson, encryptBytes } from './lib/crypto.mjs';
+import { buildBrief } from './lib/brief.mjs';
 import { readInfo, writeInfo, saveBulletin, publishBulletin } from './lib/bulletin-store.mjs';
 
 const MODE = process.env.BULLETIN || 'test';
@@ -48,9 +49,8 @@ if (MODE === 'off') process.exit(0);
 if (MODE === 'auto') {
   const t = belgrade();
   const info = await readInfo(CACHE);
-  const workday = !['Sat', 'Sun'].includes(t.weekday);
   const inWindow = t.hm >= '0630' && t.hm <= '0740';
-  if (!workday || !inWindow || info?.date === t.date) {
+  if (!inWindow || info?.date === t.date) {
     log(`not due (${t.weekday} ${t.hm}, last ${info?.date || 'none'})`);
     process.exit(0);
   }
@@ -107,20 +107,68 @@ const cap = (t, words) => {
   return w.length <= words ? t : w.slice(0, words).join(' ') + ' …';
 };
 
-// Up to 3 versions per story from different outlets; extracted articles first.
-const stories = [];
-for (const [rank, b] of (index.brief || []).entries()) {
-  const c = clusters.get(b.c);
-  if (!c) continue;
-  const items = c.it.map((id) => ({ id, ...index.items[id] })).filter((it) => it.t);
-  items.sort((a, z) => (z.x || 0) - (a.x || 0) || (z.w || 0) - (a.w || 0));
+// ---------- story selection ----------
+// Candidates: the same ranking as Ukratko (outlets covering the story, weighted toward recent reports; developing
+// stories count once; entertainment, health and promo excluded), but a longer list so skipped stories can be replaced.
+// Memory: stories from bulletins of the last 4 days are skipped unless at least 2 outlets have published something new
+// since; those come back as short "what's new" updates. Single-outlet stories are left out. No padding: if fewer
+// stories qualify, the bulletin is simply shorter.
+const HIST = path.join(CACHE, 'bulletin', 'history.json');
+const history = (() => {
+  try {
+    return JSON.parse(readFileSync(HIST, 'utf8')).filter((h) => Date.now() - h.generated < 4 * 86400e3);
+  } catch {
+    return [];
+  }
+})();
+const MAX_STORIES = 20;
+const MIN_SOURCES = 2;
+const itemMap = new Map(Object.entries(index.items).map(([id, it]) => [id, { title: it.t, lead: it.l, source: it.s, cat: it.c }]));
+const bClusters = index.clusters.map((c) => ({ id: c.id, rep: c.r, items: c.it, sources: c.n, last: c.l }));
+const threadOf = new Map(index.clusters.filter((c) => c.th).map((c) => [c.id, c.th]));
+const optional = new Set(Object.keys(index.groups || {}));
+const candidates = buildBrief(bClusters, itemMap, threadOf, optional, { size: 50, hours: 24 });
+
+const pickVersions = (ids, prefer) => {
+  const items = ids.map((id) => ({ id, ...index.items[id] })).filter((it) => it.t);
+  items.sort((a, z) => (prefer.has(z.id) ? 1 : 0) - (prefer.has(a.id) ? 1 : 0) || (z.x || 0) - (a.x || 0) || (z.w || 0) - (a.w || 0) || z.p - a.p);
   const picked = [];
   for (const it of items) {
     if (picked.length >= 3 || picked.some((p) => p.s === it.s)) continue;
     picked.push(it);
   }
+  return picked;
+};
+
+const stories = [];
+const skipped = [];
+for (const cand of candidates) {
+  if (stories.length >= MAX_STORIES) break;
+  const c = clusters.get(cand.c);
+  if (!c) continue;
+  const steps = c.th ? index.clusters.filter((x) => x.th === c.th) : [c];
+  const stepIds = steps.map((x) => x.id);
+  const allItems = steps.flatMap((x) => x.it);
+  const outlets = new Set(allItems.map((id) => index.items[id]?.s)).size;
+  const title = index.items[c.r]?.t || '';
+  const prev = history.find((h) => h.stories.some((st) => (c.th && st.thread === c.th) || st.clusters.some((id) => stepIds.includes(id))));
+  let update = null;
+  if (prev) {
+    const seen = new Set(prev.stories.filter((st) => (c.th && st.thread === c.th) || st.clusters.some((id) => stepIds.includes(id))).flatMap((st) => st.items));
+    const fresh = allItems.filter((id) => !seen.has(id));
+    const freshOutlets = new Set(fresh.map((id) => index.items[id]?.s));
+    if (freshOutlets.size < 2) {
+      skipped.push(`already in ${prev.id}: ${title.slice(0, 70)}`);
+      continue;
+    }
+    update = { since: prev.id, fresh: new Set(fresh) };
+  } else if (outlets < MIN_SOURCES) {
+    skipped.push(`one outlet only: ${title.slice(0, 70)}`);
+    continue;
+  }
+  const rank = stories.length;
   const versions = [];
-  for (const it of picked) {
+  for (const it of pickVersions(update ? allItems : c.it, update?.fresh || new Set())) {
     let body = it.l || '';
     if (it.x) {
       try {
@@ -129,18 +177,25 @@ for (const [rank, b] of (index.brief || []).entries()) {
         log('article fallback to lead:', it.id, e.message);
       }
     }
-    versions.push({ source: srcName[it.s] || it.s, title: it.t, url: it.u, text: cap(body, rank < 5 ? 700 : 450) });
+    versions.push({ source: srcName[it.s] || it.s, title: it.t, url: it.u, text: cap(body, update ? 350 : rank < 5 ? 700 : 450) });
   }
-  stories.push({ rank: rank + 1, sources: c.n || versions.length, versions });
+  stories.push({ rank: rank + 1, sources: outlets, update: !!update, versions, record: { clusters: stepIds, thread: c.th || null, items: allItems } });
 }
-log(`stories: ${stories.length}`);
+for (const sk of skipped) log('skipped', sk);
+// Too little that's new (e.g. a second run on the same morning): keep the previous bulletin.
+if (stories.length < 3 && MODE !== 'test') {
+  log(`only ${stories.length} new stories; keeping the previous bulletin`);
+  process.exit(0);
+}
+log(`stories: ${stories.length} (${stories.filter((x) => x.update).length} updates), skipped ${skipped.length}, history ${history.length} bulletins`);
 
 // ---------- prompt ----------
 const now = new Date();
 const dateStr = now.toLocaleDateString('sr-Cyrl-RS', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Belgrade' });
 const hour = Number(now.toLocaleString('en-GB', { hour: 'numeric', hour12: false, timeZone: 'Europe/Belgrade' }));
 const greeting = hour < 11 ? 'Добро јутро' : hour < 18 ? 'Добар дан' : 'Добро вече';
-const words = Math.round(MINUTES * WPM);
+const estimate = 90 + stories.reduce((n, st, i) => n + (st.update ? 100 : i < 3 ? 240 : 130), 0);
+const words = Math.min(Math.round(MINUTES * WPM), estimate);
 
 const system = `Ti si urednica i spikerka jutarnjih radio vesti na srpskom jeziku. Pišeš tekst koji će pročitati sintetički glas, za slušaoca koji vozi na posao.
 
@@ -153,8 +208,9 @@ Pravila:
 - Bez naslova, oznaka, emodžija, markdown-a i nabrajanja.
 
 Oblik:
-- Uvod u jednoj ili dve rečenice: „${greeting}, данас је ${dateStr}. Ово су најважније вести.“ i najava tri glavne teme.
+- Uvod u dve ili tri rečenice: „${greeting}, данас је ${dateStr}. Ово је Јутарња доза, преглед најважнијих вести који је припремила вештачка интелигенција на основу више извора.“ i najava tri glavne teme.
 - Zatim vesti redom kako su date (najvažnije prve). Prve tri vesti imaju po 200 do 280 reči, ostale 90 do 160. Ako vest nema dovoljno sadržaja, budi kraći. Ako je ukupno predugo, izostavi poslednje vesti.
+- Vest označena kao NASTAVAK već je bila u prethodnoj Jutarnjoj dozi: počni sa „У наставку приче о…“ ili sličnim, daj jednu rečenicu podsećanja i zatim samo ono što je novo, ukupno 60 do 120 reči.
 - Svaku vest počni jasnom rečenicom o tome šta se dogodilo. Između vesti koristi kratke prelaze, različite svaki put, bez fraze „sledeća vest“.
 - Kraj: jedna rečenica odjave, na primer „То су биле вести за данас. Срећан пут.“
 - Ukupna dužina oko ${words} reči.
@@ -166,7 +222,7 @@ const user =
   stories
     .map(
       (s) =>
-        `=== VEST ${s.rank} (prenosi ${s.sources} medija) ===\n` +
+        `=== VEST ${s.rank} (prenosi ${s.sources} medija)${s.update ? ' NASTAVAK: javi samo šta je novo' : ''} ===\n` +
         s.versions.map((v) => `--- Izvor: ${v.source}\nNaslov: ${v.title}\n${v.text}`).join('\n\n'),
     )
     .join('\n\n');
@@ -524,13 +580,15 @@ if (MODE === 'auto' || MODE === 'now') {
     acc += segBytes[i] || 0;
     return { text, label: label(text, i), start };
   });
-  const data = { id, date: t.date, generated: Date.now(), model: usedModel, voice: mp3 ? `${VOICE} (${ttsModel})` : null, segments: segs, stories: stories.map((s) => ({ rank: s.rank, sources: s.versions.map((v) => ({ source: v.source, title: v.title, url: v.url })) })) };
+  const data = { id, date: t.date, generated: Date.now(), model: usedModel, voice: mp3 ? `${VOICE} (${ttsModel})` : null, segments: segs, stories: stories.map((s) => ({ rank: s.rank, update: s.update, sources: s.versions.map((v) => ({ source: v.source, title: v.title, url: v.url })) })) };
   await saveBulletin(
     CACHE,
     { id, date: t.date, generated: data.generated, minutes: Math.round(scriptWords / WPM), audio: !!mp3, bytes: mp3?.length || 0, segments: segs.length, requested: MODE, salt: meta.salt },
     await encryptJson(key, data),
     mp3 ? await encryptBytes(key, mp3) : null,
   );
+  const hist = [{ id, generated: data.generated, stories: stories.map((st) => st.record) }, ...history].slice(0, 5);
+  writeFileSync(HIST, JSON.stringify(hist));
   const pub = await publishBulletin(CACHE, SITE, meta.salt);
   log(`published bulletin ${pub.id} (${pub.minutes} min, audio ${pub.audio ? 'yes' : 'no'})`);
 }
