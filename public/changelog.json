@@ -1,5 +1,24 @@
 [
   {
+    "v": "2.3",
+    "date": "27. 11. 2026.",
+    "title": "Poslušaj sve sačuvano, pouzdanije slušanje",
+    "items": [
+      [
+        "Novo",
+        "Sačuvano → Poslušaj sve sačuvano: sve sačuvane vesti u celosti, jedna za drugom, sa rednim brojem, naslovom i imenom medija."
+      ],
+      [
+        "Ispravka",
+        "Ekran se više ne gasi tokom slušanja, ni posle spuštanja trake sa obaveštenjima ili kratkog izlaska iz aplikacije."
+      ],
+      [
+        "Ispravka",
+        "Kada se telefon zaključa, čitanje staje na trenutnom pasusu i nastavlja od njega čim se telefon otključa. Ranije je moglo da preskoči ostatak vesti."
+      ]
+    ]
+  },
+  {
     "v": "2.2",
     "date": "27. 11. 2026.",
     "title": "Najnovije kao vremenska linija, povratak na isto mesto",

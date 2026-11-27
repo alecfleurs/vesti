@@ -440,3 +440,4 @@ body:has(.player) .wrap { padding-bottom: 110px; }
 .update-note > span:not(.cl-k) { flex: 1; }
 .row .go { font-size: 24px; color: var(--faint); line-height: 1; }
 .update-note .x { border: 0; background: none; color: var(--faint); font-size: 20px; width: 30px; cursor: pointer; }
+.saved-card.speaking { outline: 2px solid var(--accent); }

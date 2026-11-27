@@ -37,7 +37,7 @@ const S = {
   lastLoad: 0,
 };
 
-const APP_VERSION = '2.2';
+const APP_VERSION = '2.3';
 const APP_BUILD = '__BUILD__'; // replaced at build time with commit + date
 
 const app = document.getElementById('app');
@@ -1181,11 +1181,22 @@ const Voice = {
     this.i = 0;
     this.title = title;
     this.playing = true;
-    try {
-      this.wake = await navigator.wakeLock?.request('screen'); // keep the screen (and speech) on in the car
-    } catch {}
+    this.suspended = false;
+    await this.lockScreenOn();
     this.bar();
     this.speak();
+  },
+
+  // Keep the screen on while listening. Android drops the lock whenever the app is hidden for a moment
+  // (notification shade, app switch), so it is requested again every time the app comes back.
+  async lockScreenOn() {
+    if (this.wake && !this.wake.released) return;
+    try {
+      this.wake = await navigator.wakeLock?.request('screen');
+      this.wake?.addEventListener('release', () => (this.wake = null));
+    } catch {
+      this.wake = null;
+    }
   },
 
   speak() {
@@ -1205,7 +1216,8 @@ const Voice = {
       this.speak();
     };
     u.onerror = (e) => {
-      if (token !== this.token || e.error === 'interrupted' || e.error === 'canceled') return;
+      // Errors while the phone is locked are the system cutting speech off, not a bad segment: don't skip.
+      if (token !== this.token || e.error === 'interrupted' || e.error === 'canceled' || document.hidden || this.suspended) return;
       this.i++;
       this.speak();
     };
@@ -1282,11 +1294,20 @@ const Voice = {
   },
 };
 
+// The browser can't speak while the phone is locked. On lock: stop cleanly and remember the paragraph.
+// On unlock: keep the screen on again and continue from the start of that paragraph.
 document.addEventListener('visibilitychange', async () => {
-  if (document.visibilityState === 'visible' && Voice.playing && !Voice.wake) {
-    try {
-      Voice.wake = await navigator.wakeLock?.request('screen');
-    } catch {}
+  if (!Voice.playing) return;
+  if (document.hidden) {
+    Voice.suspended = true;
+    Voice.token++;
+    speechSynthesis.cancel();
+    return;
+  }
+  await Voice.lockScreenOn();
+  if (Voice.suspended) {
+    Voice.suspended = false;
+    Voice.speak();
   }
 });
 if (Voice.supported) speechSynthesis.onvoiceschanged = () => {
@@ -1426,6 +1447,38 @@ function savedOrder() {
     .map((id) => ({ id: 'saved:' + id, rep: id }));
 }
 
+const savedText = (s) => (s.html ? htmlBlocks(s.html) : [s.l].filter(Boolean));
+function savedListenMin(ids, all) {
+  const words = ids.reduce((n, id) => n + 15 + savedText(all[id]).join(' ').split(/\s+/).length, 0);
+  return Math.max(1, Math.round(words / 150 / (S.prefs.rate || 1)));
+}
+
+// Every saved article in full, newest saved first, like Ukratko: number, headline, whole text.
+function readSavedAloud() {
+  const all = savedAll();
+  const ids = Object.keys(all).sort((a, b) => all[b].savedAt - all[a].savedAt);
+  if (!ids.length) return;
+  const segs = Voice.chunks(`Sačuvano. ${ids.length} ${ids.length === 1 ? 'vest' : 'vesti'}.`, -1, { label: 'Uvod' });
+  ids.forEach((id, n) => {
+    const s = all[id];
+    const label = `Vest ${n + 1} od ${ids.length}`;
+    const head = Voice.chunks(`${ids.length > 1 ? `${ORD[n] || n + 1 + '.'} vest. ` : ''}${s.t}. Piše ${s.srcName}.`, n, { label });
+    head[0].onStart = () => {
+      document.querySelectorAll('.saved-card.speaking').forEach((el) => el.classList.remove('speaking'));
+      const li = document.querySelector(`.saved-card[data-id="${id}"]`);
+      if (li) {
+        li.classList.add('speaking');
+        li.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+    };
+    segs.push(...head);
+    savedText(s).forEach((b) => segs.push(...Voice.chunks(b, n, { label })));
+  });
+  segs.push(...Voice.chunks('To je sve sačuvano.', 999, { label: 'Kraj' }));
+  track('listen-saved');
+  Voice.start(segs, 'Sačuvano');
+}
+
 function renderSaved() {
   const all = savedAll();
   const ids = Object.keys(all).sort((a, b) => all[b].savedAt - all[a].savedAt);
@@ -1434,6 +1487,7 @@ function renderSaved() {
     `<main class="wrap">
       <h1 class="page-title">Sačuvano</h1>
       <p class="brief-sub">${ids.length ? `${ids.length} ${ids.length === 1 ? 'vest' : 'vesti'}, dostupne i bez interneta.` : 'Ovde se čuvaju vesti za kasnije. U članku dodirni <b>Sačuvaj</b>.'}</p>
+      ${ids.length && Voice.supported ? `<button class="listen-big" data-act="listen-saved">${I.play}<span>Poslušaj sve sačuvano<small>${ids.length} ${ids.length === 1 ? 'vest' : 'vesti'}, cele, oko ${savedListenMin(ids, all)} min</small></span></button>` : ''}
       <ul class="list">${ids
         .map((id) => {
           const s = all[id];
@@ -1602,6 +1656,8 @@ app.addEventListener('click', (e) => {
       if (it) readArticleAloud(it);
       return;
     }
+    case 'listen-saved':
+      return readSavedAloud();
     case 'listen-brief':
       e.preventDefault();
       if (!location.hash.startsWith('#/brief')) location.hash = '#/brief';
