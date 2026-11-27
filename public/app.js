@@ -302,13 +302,17 @@ function threadSteps(th) {
   return S.index.clusters.filter((c) => c.th === th && c.it.some(visible)).sort((a, b) => a.l - b.l);
 }
 
+// Najvažnije only holds stories updated in the last 30 h (14 days inside a category); Najnovije holds everything.
+// Chip counts use the same rule, so a chip's number is what the list shows after tapping it.
+const inTab = (c, cat, now = Date.now()) => S.tab === 'new' || now - c.l < (cat ? 14 * 24 : 30) * 3600e3;
+
 function ranked() {
   const list = viewClusters().filter((c) => !S.cat || c.cat === S.cat);
   // Najnovije is a timeline: a story stays where it first broke, later reports don't lift it back up.
   if (S.tab === 'new') return list.sort((a, b) => (b.f || b.l) - (a.f || a.l));
   const now = Date.now();
   return list
-    .filter((c) => now - c.l < (S.cat ? 14 * 24 : 30) * 3600e3)
+    .filter((c) => inTab(c, S.cat, now))
     .map((c) => {
       const age = (now - c.l) / 3600e3;
       const score = ((c.rankSrc || c.srcs.length) + 0.25 * (c.items.length - c.srcs.length)) * Math.exp(-age / 14);
@@ -674,7 +678,7 @@ function renderList() {
   }
   const list = listOrder();
   const shown = list.slice(0, S.limit);
-  const unread = list.filter(isUnread).length;
+  const unread = viewClusters().filter(isUnread).length; // the whole app, the same on every tab and category
   const thumbs = S.prefs.thumbs !== false;
   const cards = shown
     .map((c, i) => {
@@ -692,10 +696,16 @@ function renderList() {
     })
     .join('');
   const all = viewClusters();
+  const hideRead = S.prefs.readMode === 'hide';
   const counts = {};
-  for (const c of all) counts[c.cat] = (counts[c.cat] || 0) + 1;
+  let total = 0;
+  for (const c of all) {
+    if (hideRead && !isUnread(c)) continue;
+    if (inTab(c, c.cat)) counts[c.cat] = (counts[c.cat] || 0) + 1;
+    if (inTab(c, '')) total++;
+  }
   const cats = (idx.categories || []).filter((k) => counts[k]);
-  const chips = `<div class="chips" role="tablist">${[['', 'Sve', all.length], ...cats.map((k) => [k, k, counts[k]])]
+  const chips = `<div class="chips" role="tablist">${[['', 'Sve', total], ...cats.map((k) => [k, k, counts[k]])]
     .map(([k, label, n]) => `<button data-cat="${esc(k)}" aria-pressed="${S.cat === k}">${esc(label)}<span>${n}</span></button>`)
     .join('')}</div>`;
   const today = new Date().toLocaleDateString('sr-Latn-RS', { weekday: 'long', day: 'numeric', month: 'long' });

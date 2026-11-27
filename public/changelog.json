@@ -23,6 +23,10 @@
       [
         "Promena",
         "U Toku priče i u Kako ko piše najnoviji izveštaji su sada na vrhu."
+      ],
+      [
+        "Ispravka",
+        "Brojevi se slažu: broj na kategoriji je broj vesti koje se vide kada se ona izabere (Najvažnije prikazuje poslednjih 30 sati, Najnovije sve), a broj nepročitanih je isti na obe kartice."
       ]
     ]
   },
