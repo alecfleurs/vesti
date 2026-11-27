@@ -37,7 +37,7 @@ const S = {
   lastLoad: 0,
 };
 
-const APP_VERSION = '2.4';
+const APP_VERSION = '2.5';
 const APP_BUILD = '__BUILD__'; // replaced at build time with commit + date
 
 const app = document.getElementById('app');
@@ -495,6 +495,41 @@ function renderSearch() {
   });
 }
 
+// Names that run through today's top stories (Ukratko), for one-tap searches.
+// A capitalized word counts mid-headline; a headline's first word counts only if it also appears in another headline.
+const TOPIC_STOP = new Set(['foto', 'video', 'uzivo', 'live', 'srbija', 'srbiji', 'srbije', 'beograd', 'beogradu', 'danas', 'sutra', 'juce']);
+function todayTopics() {
+  const titles = briefing().map((c) => lat(S.index.items[c.rep].t));
+  const all = foldStr(titles.join(' | '));
+  // Some oblique endings (Bihaliju, Vučićem) cut off, so the chip finds every form of the name.
+  const base = (w) => {
+    const b = w.replace(/(ju|om|em)$/u, '');
+    return b.length >= 4 ? b : w;
+  };
+  const score = new Map();
+  titles.forEach((t, rank) => {
+    t.split(/[:;,!?–—|()„“”"«»]+/).forEach((seg, si) => {
+      const words = seg.trim().split(/\s+/).filter(Boolean);
+      for (let i = 0; i < words.length; i++) {
+        let w = words[i].replace(/[.'’-]+$/, '');
+        if (!/^\p{Lu}\p{Ll}{3,}$/u.test(w)) continue;
+        const next = words[i + 1]?.replace(/[.'’-]+$/, '');
+        const first = i === 0; // first word of a headline or of a part after a colon
+        if (next && /^\p{Lu}\p{Ll}{2,}$/u.test(next)) (w = next), i++; // first name + surname: keep the surname
+        w = base(w);
+        const key = foldStr(w);
+        if (TOPIC_STOP.has(key)) continue;
+        const hits = all.split(key).length - 1;
+        if (first && hits < 2) continue;
+        const v = hits * 10 - rank * 0.1;
+        const prev = score.get(key);
+        if (!prev || v > prev.v) score.set(key, { w, v });
+      }
+    });
+  });
+  return [...score.values()].sort((a, b) => b.v - a.v).slice(0, 8).map((x) => x.w);
+}
+
 function rememberSearch(q) {
   q = (q || '').trim();
   if (q.length < 2) return;
@@ -510,8 +545,10 @@ function renderResults() {
   if (q.length < 2) {
     const recent = store.get('recentSearches', []);
     S.results = [];
-    box.innerHTML = `<p class="search-hint">Pretražuje naslove i uvode svih vesti u aplikaciji. Latinica i ćirilica, sa kvačicama ili bez.</p>
-      ${recent.length ? `<div class="panel-label">Skorašnje pretrage</div><div class="chips recent">${recent.map((r) => `<button data-recent="${esc(r)}">${esc(r)}</button>`).join('')}</div>` : ''}`;
+    const topics = todayTopics();
+    box.innerHTML = `${recent.length ? `<div class="panel-label">Skorašnje pretrage</div><div class="chips recent">${recent.map((r) => `<button data-recent="${esc(r)}">${esc(r)}</button>`).join('')}</div>` : ''}
+      ${topics.length ? `<div class="panel-label">Danas u vestima</div><div class="chips recent topics">${topics.map((r) => `<button data-recent="${esc(r)}">${esc(r)}</button>`).join('')}</div>` : ''}
+      <p class="search-hint">Pretražuje naslove i uvode svih vesti u aplikaciji. Latinica i ćirilica, sa kvačicama ili bez.</p>`;
     return;
   }
   const results = runSearch(q);
@@ -577,11 +614,19 @@ function sourceBadge(c, src) {
   return `<span class="srcs" aria-label="${c.srcs.length} izvora"><span class="dots">${dots}</span><b>${esc(src.name)}</b><span class="plus">+${others}</span></span>`;
 }
 
+// Ukratko seen today (opened or listened): the home card shrinks to one line.
+const dayKey = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Belgrade' });
+const markBriefSeen = () => store.set('briefSeen', dayKey());
+
 function briefCard() {
   const list = briefing();
   if (list.length < 3) return '';
   const unread = list.filter(isUnread).length;
   const mins = Math.max(2, Math.round(list.length * 0.35));
+  if (!unread || store.get('briefSeen') === dayKey())
+    return `<div class="brief-card mini"><a class="bc-link" href="#/brief"><span class="bc-badge">Ukratko</span>
+      <span class="bc-mini">${unread ? `${unread} od ${list.length} nepročitano` : 'Sve pročitano'} · ${mins} min</span><span class="go">›</span></a>
+      ${Voice.supported ? `<button class="bc-listen sm" data-act="listen-brief" aria-label="Poslušaj Ukratko">${I.headphones}</button>` : ''}</div>`;
   return `<div class="brief-card${unread ? '' : ' done'}"><a class="bc-link" href="#/brief">
     <div class="bc-head"><span class="bc-badge">Ukratko</span><span>${unread ? `${unread} od ${list.length} nepročitano` : 'Sve pročitano'} · oko ${mins} min</span></div>
     <div class="bc-title">Najvažnije u poslednja 24 sata</div>
@@ -591,6 +636,7 @@ function briefCard() {
 }
 
 function renderBrief() {
+  markBriefSeen();
   const idx = S.index;
   const list = briefing();
   const now = new Date();
@@ -600,17 +646,16 @@ function renderBrief() {
     `<main class="wrap brief">
       <div class="brief-date">${esc(day.charAt(0).toUpperCase() + day.slice(1))}</div>
       <h1 class="page-title">Ukratko</h1>
-      <p class="brief-sub">${list.length} najvažnijih vesti iz poslednja 24 sata, po tome koliko ih medija prenosi. Samo vesti, bez zabave i reklama.</p>
+      <p class="brief-sub">${list.length} najvažnijih vesti iz poslednja 24 sata, po broju medija koji ih prenose.</p>
       ${Voice.supported ? `<button class="listen-big" data-act="listen-brief">${I.play}<span>Poslušaj Ukratko<small>${briefFull() ? 'cele vesti' : 'samo sažeci'}, oko ${briefListenMin(list)} min</small></span></button>` : ''}
       <ol class="brief-list">${list
         .map((c, i) => {
           const it = idx.items[c.rep];
-          const dots = c.srcs.slice(0, 5).map((id) => `<i style="--c:${esc(srcById(id).color || 'var(--faint)')}"></i>`).join('');
           return `<li class="${isUnread(c) ? '' : 'read'}" data-id="${c.id}"><a href="#/a/${c.rep}/${c.id}">
             <span class="num">${i + 1}</span>
-            <div class="txt"><h2>${esc(lat(it.t))}</h2>
-              <p>${esc(lat(c.summary ?? summarize(bestLead(c))))}</p>
-              <div class="meta"><span class="stack"><span class="dots">${dots}</span>${c.srcs.length > 1 ? `${c.srcs.length} izvora` : esc(srcById(it.s).name)}</span><span>${ago(c.l)}</span></div></div></a></li>`;
+            <div class="txt"><div class="meta">${sourceBadge(c, srcById(it.s))}<span>${ago(c.l)}</span></div>
+              <h2>${esc(lat(it.t))}</h2>
+              <p>${esc(lat(c.summary ?? summarize(bestLead(c))))}</p></div></a></li>`;
         })
         .join('')}</ol>
       <button class="more" data-act="brief-done">Označi kao pročitano i nazad</button>
@@ -906,54 +951,52 @@ async function renderChangelog() {
     .join('');
 }
 
+// Settings: a short main page with sub-pages (#/settings/izgled, lista, glas, izvori, o).
+// GitHub-only tools (add a source, run a build) show only on the owner's device: tap the
+// app icon under O aplikaciji seven times to switch owner mode on or off.
 function renderSettings() {
   const idx = S.index;
   const repo = idx.repo;
+  const sub = (location.hash.split('/')[2] || '').trim();
+  const owner = !!store.get('owner');
+  const seg = (name, val, opts) =>
+    `<div class="seg">${opts.map(([v, l]) => `<button data-pref="${name}" data-val="${v}" aria-pressed="${val === v}">${l}</button>`).join('')}</div>`;
+  const sw = (act, on) => `<input type="checkbox" class="switch" data-act="${act}" ${on ? 'checked' : ''}>`;
   const statusOf = (s) => {
     if (s.mode === 'failed') return ['bad', `Ne radi: ${s.error || 'nepoznata greška'}`];
     if (s.mode === 'rss') return ['ok', `RSS · ${s.count} članaka`];
     if (s.mode === 'scrape') return ['warn', `Bez RSS-a, naslovi sa naslovne strane · ${s.count}`];
     return ['warn', `RSS pronađen automatski · ${s.count} članaka`];
   };
-  const seg = (name, val, opts) =>
-    `<div class="seg">${opts.map(([v, l]) => `<button data-pref="${name}" data-val="${v}" aria-pressed="${val === v}">${l}</button>`).join('')}</div>`;
+  const page = (title, body, back = '#/settings') => {
+    app.innerHTML =
+      bar(`<a class="icon-btn" href="${back}" aria-label="Nazad">${I.back}</a><span class="crumb"></span>`) +
+      `<main class="wrap settings"><h1 class="page-title">${title}</h1>${body}</main>`;
+    hideSplash();
+  };
+  const link = (to, label, hint) => `<a class="row" href="#/settings/${to}"><div class="grow">${label}${hint ? `<div class="hint">${hint}</div>` : ''}</div><span class="go">›</span></a>`;
+  const themeName = { auto: 'Auto', light: 'Svetla', dark: 'Tamna' }[S.prefs.theme] || 'Auto';
+  const on = idx.sources.filter((s) => !S.hidden.has(s.id)).length;
 
-  app.innerHTML =
-    bar(`<a class="icon-btn" href="#/" aria-label="Nazad">${I.back}</a><span class="crumb"></span>`) +
-    `<main class="wrap">
-      <h1 class="page-title">Podešavanja</h1>
-      <div class="panel-label">Izgled</div>
-      <section class="panel">
+  if (sub === 'izgled')
+    return page('Izgled', `<section class="panel">
         <div class="row"><div class="grow">Tema</div>${seg('theme', S.prefs.theme, [['auto', 'Auto'], ['light', 'Svetla'], ['dark', 'Tamna']])}</div>
         <div class="row"><div class="grow">Font za čitanje</div>${seg('readfont', S.prefs.readfont || 'sans', [['sans', 'Moderan'], ['serif', 'Klasičan']])}</div>
         <div class="row"><div class="grow">Veličina teksta<div class="hint">${S.prefs.size}px</div></div>
           <input type="range" min="15" max="24" step="1" value="${S.prefs.size}" data-act="size"></div>
+        <div class="row"><div class="grow">Sve latinicom<div class="hint">Ćirilične naslove i tekstove prikazuje latinicom</div></div>${sw('latin', S.prefs.latin)}</div>
+        <div class="row"><div class="grow">Slike u listi<div class="hint">Isključi za manju potrošnju podataka</div></div>${sw('thumbs', S.prefs.thumbs !== false)}</div>
+      </section>`);
+  if (sub === 'lista')
+    return page('Lista vesti', `<section class="panel">
         <div class="row"><div class="grow">Pročitane vesti<div class="hint">Zatamni ih ili ih potpuno skloni iz liste</div></div>${seg('readMode', S.prefs.readMode === 'hide' ? 'hide' : 'dim', [['dim', 'Zatamni'], ['hide', 'Sakrij']])}</div>
-        <div class="row"><div class="grow">Slike u listi<div class="hint">Isključi za manju potrošnju podataka</div></div>
-          <input type="checkbox" class="switch" data-act="thumbs" ${S.prefs.thumbs !== false ? 'checked' : ''}></div>
-        <div class="row"><div class="grow">Zabava i zdravlje<div class="hint">Estrada, rijaliti, horoskop i zdravlje, kao kategorije Zabava i Zdravlje</div></div>
-          <input type="checkbox" class="switch" data-act="fun" ${S.prefs.fun ? 'checked' : ''}></div>
-        <div class="row"><div class="grow">Sponzorisani tekstovi<div class="hint">PR članci i akcije koje mediji objavljuju kao vesti (kategorija Promo)</div></div>
-          <input type="checkbox" class="switch" data-act="promo" ${S.prefs.promo ? 'checked' : ''}></div>
-        <div class="row"><div class="grow">Spoji razvoj priče<div class="hint">Nastavak iste priče (npr. hapšenje pa pritvor) prikazuje se kao jedna vest sa tokom priče</div></div>
-          <input type="checkbox" class="switch" data-act="threads" ${S.prefs.threads !== false ? 'checked' : ''}></div>
-        <div class="row"><div class="grow">Sve latinicom<div class="hint">Ćirilične naslove i tekstove prikazuje latinicom</div></div>
-          <input type="checkbox" class="switch" data-act="latin" ${S.prefs.latin ? 'checked' : ''}></div>
-      </section>
-
-      ${Voice.supported ? voiceSettings() : ''}
-      <div class="panel-label">Izvori</div>
-      <section class="panel">
-        ${idx.sources.map((s) => {
-          const [cls, txt] = statusOf(s);
-          return `<div class="row"><span class="status ${cls}"></span>
-            <div class="grow"><strong>${esc(s.name)}</strong><div class="hint">${esc(txt)}</div></div>
-            <input type="checkbox" class="switch" data-src="${esc(s.id)}" aria-label="Prikaži ${esc(s.name)}" ${S.hidden.has(s.id) ? '' : 'checked'}></div>`;
-        }).join('')}
-        <div class="row"><div class="grow hint">Isključeni izvori se skrivaju samo na ovom uređaju.</div></div>
-      </section>
-
-      <div class="panel-label">Dodaj izvor</div>
+        <div class="row"><div class="grow">Spoji razvoj priče<div class="hint">Nastavak iste priče (npr. hapšenje pa pritvor) prikazuje se kao jedna vest sa tokom priče</div></div>${sw('threads', S.prefs.threads !== false)}</div>
+        <div class="row"><div class="grow">Zabava i zdravlje<div class="hint">Estrada, rijaliti, horoskop i zdravlje, kao kategorije Zabava i Zdravlje</div></div>${sw('fun', S.prefs.fun)}</div>
+        <div class="row"><div class="grow">Sponzorisani tekstovi<div class="hint">PR članci i akcije koje mediji objavljuju kao vesti (kategorija Promo)</div></div>${sw('promo', S.prefs.promo)}</div>
+      </section>`);
+  if (sub === 'glas' && Voice.supported) return page('Čitanje naglas', voiceSettings().replace(/^<div class="panel-label">[^<]*<\/div>/, ''));
+  if (sub === 'izvori') {
+    const addSource = owner ? `<div class="panel-label">Dodaj izvor</div>
       <section class="panel">
         <label class="field"><span>Naziv</span><input id="ns-name" placeholder="npr. RTS" autocomplete="off"></label>
         <label class="field"><span>Adresa sajta</span><input id="ns-home" type="url" inputmode="url" placeholder="https://www.rts.rs/" autocomplete="off"></label>
@@ -963,25 +1006,23 @@ function renderSettings() {
           ? 'Otvara GitHub sa pripremljenim fajlom. Potvrdi sa Commit changes. Izvor se pojavljuje posle sledećeg ažuriranja.'
           : 'Dostupno kada aplikacija radi sa GitHub Pages.'}</p>
       </section>
-
-      <div class="panel-label">Podeli i instaliraj</div>
+      ${repo ? `<section class="panel"><a class="row" href="https://github.com/${esc(repo)}/tree/main/sources" target="_blank" rel="noopener"><div class="grow">Uredi ili ukloni izvore<div class="hint">Fajlovi u folderu sources na GitHubu</div></div>${I.ext}</a>
+        <a class="row" href="https://github.com/${esc(repo)}/actions/workflows/update.yml" target="_blank" rel="noopener"><div class="grow">Pokreni prikupljanje<div class="hint">Run workflow na GitHub Actions</div></div>${I.ext}</a></section>` : ''}` : '';
+    page('Izvori', `<p class="page-sub">Isključeni izvori se skrivaju samo na ovom uređaju.</p>
       <section class="panel">
-        ${isStandalone() ? `<div class="row"><span class="status ok"></span><div class="grow">Aplikacija je instalirana</div></div>` : canOfferInstall()
-          ? `<button class="row" data-act="install"><div class="grow">Instaliraj aplikaciju<div class="hint">Ikonica na početnom ekranu, otvara se bez pregledača</div></div>${I.install}</button>`
-          : `<div class="row"><div class="grow">Instaliraj aplikaciju<div class="hint">U Chrome meniju ⋮ izaberi „Instaliraj aplikaciju“ ili „Dodaj na početni ekran“</div></div></div>`}
-        <button class="row" data-act="share"><div class="grow">Pošalji link porodici i prijateljima<div class="hint">Link sadrži lozinku, pa se aplikacija otključava sama. Šalji ga samo ljudima kojima veruješ.</div></div>${I.share}</button>
-      </section>
-
-      <div class="panel-label">Održavanje</div>
-      <section class="panel">
-        ${repo ? `<a class="row" href="https://github.com/${esc(repo)}/tree/main/sources" target="_blank" rel="noopener"><div class="grow">Uredi ili ukloni izvore<div class="hint">Fajlovi u folderu sources na GitHubu</div></div>${I.ext}</a>
-        <a class="row" href="https://github.com/${esc(repo)}/actions/workflows/update.yml" target="_blank" rel="noopener"><div class="grow">Ažuriraj odmah<div class="hint">Run workflow na GitHub Actions</div></div>${I.ext}</a>` : ''}
-        <button class="row" data-act="logout"><div class="grow">Zaboravi lozinku na ovom uređaju</div></button>
-      </section>
-      <div class="panel-label">O aplikaciji</div>
-      <section class="panel"><a class="row" href="#/changelog"><div class="grow">Šta je novo<div class="hint">Sve verzije i promene, od prve do ${APP_VERSION}</div></div><span class="go">›</span></a></section>
-      <section class="panel about">
-        <div class="about-head"><img src="icon.svg" alt="" width="52" height="52">
+        ${idx.sources.map((s) => {
+          const [cls, txt] = statusOf(s);
+          return `<div class="row"><span class="status ${cls}"></span>
+            <div class="grow"><strong>${esc(s.name)}</strong><div class="hint">${esc(txt)}</div></div>
+            <input type="checkbox" class="switch" data-src="${esc(s.id)}" aria-label="Prikaži ${esc(s.name)}" ${S.hidden.has(s.id) ? '' : 'checked'}></div>`;
+        }).join('')}
+      </section>${addSource}`);
+    if (owner) wireAddSource(repo);
+    return;
+  }
+  if (sub === 'o')
+    return page('O aplikaciji', `<section class="panel about">
+        <div class="about-head" data-act="owner-tap"><img src="icon.svg" alt="" width="52" height="52">
           <div><b>Pametniji čitač vesti</b><span>Verzija ${APP_VERSION}${APP_BUILD.startsWith('__') ? '' : ` · ${esc(APP_BUILD)}`}</span></div></div>
         <p>Vesti iz ${idx.sources.length} srpskih medija na jednom mestu, bez reklama i bez ponavljanja. Za par minuta znaš šta je važno danas.</p>
         <h3 class="about-h">Zašto je pametniji</h3>
@@ -1012,10 +1053,30 @@ function renderSettings() {
         </ul>
         <p class="hint">Tekstovi i fotografije pripadaju izdavačima. Aplikacija je namenjena ličnoj upotrebi i uvek vodi na originalni članak.</p>
       </section>
-      <p class="foot">Poslednje ažuriranje vesti: ${new Date(idx.generated).toLocaleString('sr-Latn-RS')}</p>
-    </main>`;
+      <section class="panel"><button class="row" data-act="logout"><div class="grow">Zaboravi lozinku na ovom uređaju<div class="hint">Za ponovni ulaz trebaće ti lozinka ili link</div></div></button></section>`);
 
+  page('Podešavanja', `<section class="panel">
+        ${link('izgled', 'Izgled', `${themeName} · ${S.prefs.readfont === 'serif' ? 'Klasičan' : 'Moderan'} font · ${S.prefs.size}px${S.prefs.latin ? ' · latinica' : ''}`)}
+        ${link('lista', 'Lista vesti', `Pročitane: ${S.prefs.readMode === 'hide' ? 'sakrivene' : 'zatamnjene'}${S.prefs.fun ? ' · zabava' : ''}${S.prefs.promo ? ' · sponzorisano' : ''}`)}
+        ${Voice.supported ? link('glas', 'Čitanje naglas', `Brzina ${(S.prefs.rate || 1).toFixed(1)}× · Ukratko: ${briefFull() ? 'cele vesti' : 'sažeci'}`) : ''}
+        ${link('izvori', 'Izvori', `${on} od ${idx.sources.length} uključeno`)}
+      </section>
+      <section class="panel">
+        ${isStandalone() ? `<div class="row"><span class="status ok"></span><div class="grow">Aplikacija je instalirana</div></div>` : canOfferInstall()
+          ? `<button class="row" data-act="install"><div class="grow">Instaliraj aplikaciju<div class="hint">Ikonica na početnom ekranu, otvara se bez pregledača</div></div>${I.install}</button>`
+          : `<div class="row"><div class="grow">Instaliraj aplikaciju<div class="hint">U Chrome meniju ⋮ izaberi „Instaliraj aplikaciju“ ili „Dodaj na početni ekran“</div></div></div>`}
+        <button class="row" data-act="share"><div class="grow">Pošalji link porodici i prijateljima<div class="hint">Link sadrži lozinku, pa se aplikacija otključava sama. Šalji ga samo ljudima kojima veruješ.</div></div>${I.share}</button>
+      </section>
+      <section class="panel">
+        <a class="row" href="#/changelog"><div class="grow">Šta je novo<div class="hint">Verzija ${APP_VERSION}</div></div><span class="go">›</span></a>
+        ${link('o', 'O aplikaciji i uputstvo', 'Šta aplikacija radi i kako se koristi')}
+      </section>
+      <p class="foot">Poslednje ažuriranje vesti: ${new Date(idx.generated).toLocaleString('sr-Latn-RS')}</p>`, '#/');
+}
+
+function wireAddSource(repo) {
   const name = $('#ns-name'), home = $('#ns-home'), feed = $('#ns-feed'), go = $('#ns-go');
+  if (!name) return;
   const update = () => {
     let ok = false;
     try {
@@ -1336,7 +1397,7 @@ document.addEventListener('visibilitychange', async () => {
   }
 });
 if (Voice.supported) speechSynthesis.onvoiceschanged = () => {
-  if (location.hash === '#/settings') renderSettings();
+  if (location.hash.startsWith('#/settings')) renderSettings();
 };
 
 function readArticleAloud(it) {
@@ -1377,6 +1438,7 @@ function htmlBlocks(html) {
 }
 
 async function readBriefAloud() {
+  markBriefSeen();
   const list = briefing();
   if (!list.length) return;
   const full = briefFull();
@@ -1678,6 +1740,15 @@ app.addEventListener('click', (e) => {
       if (!d) return;
       d.open = true;
       return d.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    case 'owner-tap': {
+      S.ownerTaps = (S.ownerTaps || 0) + 1;
+      clearTimeout(S.ownerTimer);
+      S.ownerTimer = setTimeout(() => (S.ownerTaps = 0), 2500);
+      if (S.ownerTaps < 7) return;
+      S.ownerTaps = 0;
+      store.set('owner', !store.get('owner'));
+      return toast(store.get('owner') ? 'Vlasnički alati uključeni (Izvori)' : 'Vlasnički alati isključeni');
     }
     case 'reader-opts':
       return readerOptions();

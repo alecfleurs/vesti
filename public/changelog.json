@@ -1,5 +1,28 @@
 [
   {
+    "v": "2.5",
+    "date": "27. 11. 2026.",
+    "title": "Kraći Ukratko, sređena Podešavanja, teme u pretrazi",
+    "items": [
+      [
+        "Promena",
+        "Kada danas već otvoriš ili poslušaš Ukratko, kartica na početnom ekranu se skuplja u jedan red, sa dugmetom za slušanje."
+      ],
+      [
+        "Promena",
+        "Stranica Ukratko je zbijenija: naslov, mediji i dva reda sažetka, pa na ekran stane duplo više vesti."
+      ],
+      [
+        "Promena",
+        "Podešavanja su podeljena na Izgled, Listu vesti, Čitanje naglas, Izvore i O aplikaciji, sa trenutnim izborom ispod svakog naziva."
+      ],
+      [
+        "Novo",
+        "Pretraga pre kucanja nudi imena i mesta iz današnjih najvažnijih vesti, za pretragu jednim dodirom."
+      ]
+    ]
+  },
+  {
     "v": "2.4",
     "date": "27. 11. 2026.",
     "title": "Pregledniji početni ekran i članak",
