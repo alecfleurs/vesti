@@ -149,17 +149,26 @@ async function gemini(model) {
   if (!text.trim()) throw new Error(`Gemini ${model}: empty answer (${body.candidates?.[0]?.finishReason || 'no candidate'})`);
   return { text, usage: body.usageMetadata };
 }
+// Free tier: 503 (high demand) and 429 (rate limit) are common and short; retry, then try the next model.
 let script, usedModel;
-for (const m of MODELS) {
-  try {
-    const r = await gemini(m);
-    script = r.text;
-    usedModel = m;
-    log(`model ${m}, tokens`, JSON.stringify(r.usage || {}));
-    break;
-  } catch (e) {
-    log(e.message);
-    if (e.status !== 404 && e.status !== 400) throw e;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+models: for (const m of MODELS) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const r = await gemini(m);
+      script = r.text;
+      usedModel = m;
+      log(`model ${m}, tokens`, JSON.stringify(r.usage || {}));
+      break models;
+    } catch (e) {
+      log(e.message);
+      if (e.status === 503 || e.status === 429 || e.status >= 500) {
+        if (attempt < 3) await sleep(attempt * 30e3);
+        continue;
+      }
+      if (e.status === 404 || e.status === 400) continue models;
+      throw e;
+    }
   }
 }
 if (!script) throw new Error('no Gemini model answered');
