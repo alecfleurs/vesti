@@ -312,7 +312,9 @@ async function tts(text) {
 }
 // Gemini speech: returns raw PCM (24 kHz, mono, 16-bit). Several segments go into one request (fewer calls on the
 // free tier); each segment's share of that request's audio is estimated from its length in characters.
-const GEMINI_STYLE = 'Pročitaj na srpskom, kao smirena i jasna spikerka radio vesti, prirodnim tempom:';
+const GEMINI_STYLE = 'Read the following Serbian news text aloud, in Serbian, in the calm, clear voice of a radio newsreader, at a natural pace:';
+// News is full of crime, war and accidents; the chat safety filters would refuse to read it aloud.
+const SAFETY_OFF = ['HARM_CATEGORY_HARASSMENT', 'HARM_CATEGORY_HATE_SPEECH', 'HARM_CATEGORY_SEXUALLY_EXPLICIT', 'HARM_CATEGORY_DANGEROUS_CONTENT'].map((category) => ({ category, threshold: 'BLOCK_NONE' }));
 async function geminiSpeech(text) {
   let last;
   for (const model of TTS_MODELS) {
@@ -324,6 +326,7 @@ async function geminiSpeech(text) {
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
           body: JSON.stringify({
             contents: [{ role: 'user', parts: [{ text: `${GEMINI_STYLE}\n\n${text}` }] }],
+            safetySettings: SAFETY_OFF,
             generationConfig: {
               responseModalities: ['AUDIO'],
               speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: VOICE } } },
@@ -385,14 +388,39 @@ if (ENGINE === 'cloud') {
   }
   const pcms = [];
   const t0 = Date.now();
+  const skipped = new Set();
+  let calls = 0;
+  const speak = async (txt) => {
+    if (calls++) await new Promise((r) => setTimeout(r, 4000)); // stay under the free tier's per-minute limit
+    return geminiSpeech(txt);
+  };
   for (const [gi, g] of groups.entries()) {
-    if (gi) await new Promise((r) => setTimeout(r, 4000)); // stay under the free tier's per-minute limit
-    const { pcm, model } = await geminiSpeech(g.idx.map((i) => segments[i]).join('\n\n'));
-    ttsModel = model;
-    pcms.push(pcm);
-    for (const i of g.idx) segBytes[i] = (pcm.length * segments[i].length) / g.chars;
-    log(`speech ${gi + 1}/${groups.length}: ${g.chars} chars -> ${(pcm.length / 48000).toFixed(0)} s (${model})`);
+    try {
+      const { pcm, model } = await speak(g.idx.map((i) => segments[i]).join('\n\n'));
+      ttsModel = model;
+      pcms.push(pcm);
+      for (const i of g.idx) segBytes[i] = (pcm.length * segments[i].length) / g.chars;
+      log(`speech ${gi + 1}/${groups.length}: ${g.chars} chars -> ${(pcm.length / 48000).toFixed(0)} s (${model})`);
+    } catch (e) {
+      // One refused story shouldn't sink the bulletin: read the group's stories one by one, skip the ones that still fail.
+      log(`speech ${gi + 1}/${groups.length} failed (${e.message}); trying story by story`);
+      for (const i of g.idx) {
+        try {
+          const { pcm, model } = await speak(segments[i]);
+          ttsModel = model;
+          pcms.push(pcm);
+          segBytes[i] = pcm.length;
+        } catch (e2) {
+          skipped.add(i);
+          segBytes[i] = 0;
+          log(`  skipped segment ${i}: ${e2.message}`);
+        }
+      }
+    }
   }
+  if (!pcms.length) throw new Error('Gemini speech produced no audio');
+  if (skipped.size) log(`skipped ${skipped.size} of ${segments.length} segments`);
+  for (const i of [...skipped].sort((x, y) => y - x)) segments.splice(i, 1), segBytes.splice(i, 1);
   mp3 = pcmToMp3(Buffer.concat(pcms));
   log(`audio: ${groups.length} requests in ${Math.round((Date.now() - t0) / 1000)} s, ${(mp3.length / 1e6).toFixed(1)} MB, voice ${VOICE}, ${ttsModel}`);
 } else log('no voice key: script only (the app reads it with the phone voice)');
