@@ -14,11 +14,11 @@
       ],
       [
         "Promena",
-        "Vrh početnog ekrana je zbijeniji: Jutarnja doza i Ukratko su jedan red, pa se vesti vide ranije."
+        "Vrh početnog ekrana je zbijeniji: Jutarnja doza i Pregled dana su jedan red, pa se vesti vide ranije."
       ],
       [
         "Promena",
-        "Ukratko se više ne čita naglas, jer to sada radi Jutarnja doza. Pojedinačni članci se i dalje mogu slušati dugmetom Slušaj."
+        "Pregled dana (ranije Ukratko) se više ne čita naglas, jer to sada radi Jutarnja doza. Pojedinačni članci se i dalje mogu slušati dugmetom Slušaj."
       ],
       [
         "Promena",
@@ -27,6 +27,10 @@
       [
         "Ispravka",
         "Brojevi se slažu: broj na kategoriji je broj vesti koje se vide kada se ona izabere (Najvažnije prikazuje poslednjih 30 sati, Najnovije sve), a broj nepročitanih je isti na obe kartice."
+      ],
+      [
+        "Promena",
+        "Ukratko se sada zove Pregled dana."
       ]
     ]
   },

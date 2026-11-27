@@ -345,7 +345,7 @@ const bestLead = (c) => {
   return rep && rep.length > 60 ? rep : leads.sort((a, b) => b.length - a.length)[0] || '';
 };
 
-// "Ukratko": the server's list (same as the future voice briefing), minus stories from hidden sources.
+// "Pregled dana" (was Ukratko): the server's list (same as the future voice briefing), minus stories from hidden sources.
 function briefing() {
   if (!S.index.brief) return briefingLocal();
   const byId = new Map(S.index.clusters.map((c) => [c.id, c]));
@@ -632,7 +632,7 @@ function topTiles() {
   const list = briefing();
   const unread = list.filter(isUnread).length;
   const brief = list.length >= 3
-    ? `<a class="tile brief-tile" href="#/brief"><span class="tl-txt"><b>Ukratko</b><small>${unread ? `${unread} nepročitano` : 'Sve pročitano'}</small></span><span class="go">›</span></a>`
+    ? `<a class="tile brief-tile" href="#/brief"><span class="tl-txt"><b>Pregled dana</b><small>${unread ? `${unread} nepročitano` : 'Sve pročitano'}</small></span><span class="go">›</span></a>`
     : '';
   return `<div class="top-tiles">${doseTile()}${brief}</div>`;
 }
@@ -646,7 +646,7 @@ function renderBrief() {
     bar(`<a class="icon-btn" href="#/" aria-label="Nazad">${I.back}</a><span class="crumb"></span>`) +
     `<main class="wrap brief">
       <div class="brief-date">${esc(day.charAt(0).toUpperCase() + day.slice(1))}</div>
-      <h1 class="page-title">Ukratko</h1>
+      <h1 class="page-title">Pregled dana</h1>
       <p class="brief-sub">${list.length} najvažnijih vesti iz poslednja 24 sata, po broju medija koji ih prenose.</p>
       <ol class="brief-list">${list
         .map((c, i) => {
@@ -1037,7 +1037,7 @@ function renderSettings() {
           <li><b>Bez reklama i iskačućih prozora.</b> Samo tekst i fotografije, bez kolačića i bez „pročitajte još“. Zabava, zdravlje i sponzorisani tekstovi su isključeni dok ih sam ne uključiš.</li>
           <li><b>Svaka vest samo jednom.</b> Kada više medija piše o istom događaju, priče se spajaju u jednu karticu. Lista je skoro duplo kraća.</li>
           <li><b>Svi važni mediji na jednom mestu.</b> Od dnevnih portala do istraživačkih redakcija, bez skakanja po sajtovima.</li>
-          <li><b>Ukratko.</b> Dvadeset najvažnijih vesti iz poslednja 24 sata, sa po dve rečenice, za nekoliko minuta.</li>
+          <li><b>Pregled dana.</b> Dvadeset najvažnijih vesti iz poslednja 24 sata, sa po dve rečenice, za nekoliko minuta čitanja.</li>
           <li><b>Kako ko piše.</b> Uporedi naslove različitih medija o istom događaju i sam proceni.</li>
           <li><b>Tok priče.</b> Kada se priča razvija (hapšenje, pa pritvor, pa optužnica), vidiš samo najnoviji korak, a ceo tok je u članku.</li>
           <li><b>Pretraga.</b> Nađi bilo koju vest za sekund, latinicom ili ćirilicom, sa kvačicama ili bez.</li>
